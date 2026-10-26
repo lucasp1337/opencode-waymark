@@ -1,0 +1,21 @@
+{
+  "name": "opencode-waymark",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test --coverage --path-ignore-patterns 'test/live/**' --path-ignore-patterns 'vendor/**'",
+    "test:live": "bun test test/live --timeout 240000",
+    "lint": "biome check . && knip",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.19.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.3",
+    "@types/bun": "^1.4.4",
+    "knip": "^6.43.0",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules/
+vendor/opencode/
+*.tmp
+*.sqlite
+.DS_Store
+graphify-out/
+.idea/
