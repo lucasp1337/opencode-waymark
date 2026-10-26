@@ -1,14 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { memoryId } from "../../../test/memory-id";
 import { validContent } from "../../../test/valid-content";
-import { isMemoryId, type MemoryId } from "./id";
 import { newMemory } from "./memory";
-
-function memoryId(text: string): MemoryId {
-  if (!isMemoryId(text)) {
-    throw new Error(`fixture id ${text} is not a ULID`);
-  }
-  return text;
-}
 
 const ID = memoryId("01JB8Z6Q4R3M2N1P0V9W8X7Y6Z");
 const content = validContent({ kind: "fact", title: "t", body: "b" });

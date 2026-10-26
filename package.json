@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "1.19.4"
+    "@opencode-ai/plugin": "1.19.4",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.3",
