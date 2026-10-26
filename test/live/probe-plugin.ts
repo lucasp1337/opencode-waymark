@@ -1,5 +1,5 @@
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
-import type { HostPort } from "../../src/host/port";
+import type { HostPort } from "../../src/core/port";
 import { createV1Adapter } from "../../src/host/v1";
 import { createFileLogger, logFilePath } from "../../src/logger";
 

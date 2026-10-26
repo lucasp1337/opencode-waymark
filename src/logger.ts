@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import type { LogLevel } from "./host/port";
+import type { LogLevel } from "./core/port";
 
 export interface Logger {
   log(level: LogLevel, msg: string, data?: unknown): void;

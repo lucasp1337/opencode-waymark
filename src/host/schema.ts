@@ -1,4 +1,4 @@
-import type { JsonSchema, JsonSchemaObject } from "./port";
+import type { JsonSchema, JsonSchemaObject } from "../core/port";
 
 export interface SchemaBuilder<T> {
   string(): T;

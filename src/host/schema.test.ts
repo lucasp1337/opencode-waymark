@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { JsonSchemaObject } from "./port";
+import type { JsonSchemaObject } from "../core/port";
 import { buildShape, type SchemaBuilder, UnsupportedSchemaError } from "./schema";
 
 // Builds a readable tree so tests assert on structure instead of on zod internals.

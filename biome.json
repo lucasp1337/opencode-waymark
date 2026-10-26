@@ -78,7 +78,7 @@
       }
     },
     {
-      "includes": ["src/index.ts", "src/host/port.ts"],
+      "includes": ["src/index.ts"],
       "linter": {
         "rules": {
           "style": {

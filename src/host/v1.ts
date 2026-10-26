@@ -1,5 +1,4 @@
 import { type Config, type Hooks, type Plugin, type PluginInput, tool } from "@opencode-ai/plugin";
-import { createFileLogger, type Logger, logFilePath } from "../logger";
 import type {
   Capabilities,
   HostPort,
@@ -7,7 +6,8 @@ import type {
   SessionMeta,
   ToolCallInfo,
   ToolDef,
-} from "./port";
+} from "../core/port";
+import { createFileLogger, type Logger, logFilePath } from "../logger";
 import { buildShape, type SchemaBuilder } from "./schema";
 import { summarize } from "./summarize";
 import { commandOf, touchedPaths } from "./tool-args";

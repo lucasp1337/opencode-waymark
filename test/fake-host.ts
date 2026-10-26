@@ -6,7 +6,7 @@ import type {
   SessionMeta,
   ToolCallInfo,
   ToolDef,
-} from "../src/host/port";
+} from "../src/core/port";
 
 interface LogEntry {
   level: LogLevel;
