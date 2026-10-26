@@ -5,9 +5,7 @@ describe("onSystem", () => {
   test("text returned by the handler is visible to the agent in its system prompt", async () => {
     const env = liveEnvWithProbe();
 
-    const result = await env.run(
-      "What is the project codeword? Reply with only the codeword.",
-    );
+    const result = await env.run("What is the project codeword? Reply with only the codeword.");
 
     expect(result.stdout).toContain("WAYMARK_SYSTEM_MARKER_7Q2");
   });

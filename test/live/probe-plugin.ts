@@ -5,19 +5,6 @@ import { createFileLogger, logFilePath } from "../../src/logger";
 
 function registerSessionTools(host: HostPort, input: PluginInput): void {
   host.registerTool({
-    name: "probe_compact",
-    description: "Compact the current session.",
-    inputSchema: { type: "object", properties: {} },
-    execute: async (_input, ctx) => {
-      const result = await input.client.session.summarize({
-        path: { id: ctx.sessionID },
-        body: { providerID: "opencode", modelID: "big-pickle" },
-      });
-      host.log("info", "probe.compact.result", { data: result.data, error: result.error });
-      return "compaction requested";
-    },
-  });
-  host.registerTool({
     name: "probe_delete_other",
     description: "Delete the session with the given id.",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
@@ -103,7 +90,7 @@ function registerProbes(host: HostPort): void {
   });
   host.onCompaction((sessionID) => {
     host.log("info", "probe.compaction", { sessionID });
-    return Promise.resolve("WAYMARK_COMPACT_MARKER_4K9");
+    return Promise.resolve("The summary must contain the exact token WAYMARK_COMPACT_MARKER_4K9.");
   });
 }
 
