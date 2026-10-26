@@ -28,3 +28,5 @@ for await (const line of console) {
     handlers[message.method]?.(message.id);
   }
 }
+
+export {};

@@ -18,7 +18,7 @@ export interface JsonSchemaObject {
   description?: string;
 }
 
-export interface ToolCtx {
+interface ToolCtx {
   sessionID: string;
   agent?: string;
 }
