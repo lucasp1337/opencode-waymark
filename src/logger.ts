@@ -21,7 +21,7 @@ export function createFileLogger(file: string, now: () => Date): Logger {
       try {
         appendFileSync(file, `${line}\n`);
       } catch {
-        // A failing log must fail the user's operation; nowhere else to report it.
+        // A failing log must not fail the user's operation; nowhere else to report it.
       }
     },
   };
