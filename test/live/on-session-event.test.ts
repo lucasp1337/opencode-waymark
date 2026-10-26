@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { liveEnvWithProbe, probeLines } from "./harness";
+import { at, liveEnvWithProbe, probeLines } from "./harness";
 
 function eventsOf(env: ReturnType<typeof liveEnvWithProbe>): { type: string; sessionID: string }[] {
-  return probeLines(env, "probe.session.event").map((line) => {
-    const event = line.event as { type: string; sessionID: string };
-    return { type: event.type, sessionID: event.sessionID };
-  });
+  return probeLines(env, "probe.session.event").map((line) => ({
+    type: String(at(line, "event", "type")),
+    sessionID: String(at(line, "event", "sessionID")),
+  }));
 }
 
 describe("onSessionEvent", () => {

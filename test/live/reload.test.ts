@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createLiveEnv, type LiveEnv, probeLines, waitUntil } from "./harness";
+import { at, createLiveEnv, type Json, type LiveEnv, probeLines, waitUntil } from "./harness";
 
 const LOGGER = resolve(import.meta.dir, "..", "..", "src", "logger.ts");
 
@@ -21,8 +21,8 @@ function reloadPluginSource(version: string): string {
   ].join("\n");
 }
 
-function versions(env: LiveEnv, msg: string): unknown[] {
-  return probeLines(env, msg).map((line) => line.version);
+function versions(env: LiveEnv, msg: string): Array<Json | undefined> {
+  return probeLines(env, msg).map((line) => at(line, "version"));
 }
 
 // Long enough for a file watcher to notice the edit, if opencode had one.

@@ -8,11 +8,37 @@ const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 // opencode run wraps any argv entry containing a space in quotes, so the prompt goes in word by word.
 const RUN_TIMEOUT_MS = 120_000;
 
+export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
+
+// The single parse boundary of the live suite: JSON.parse only ever yields JSON values.
+function parseJson(text: string): Json {
+  return JSON.parse(text);
+}
+
+function isJsonObject(value: Json | undefined): value is { [key: string]: Json } {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Walks object keys; any missing step yields undefined.
+export function at(value: Json | undefined, ...path: string[]): Json | undefined {
+  return path.reduce<Json | undefined>(
+    (node, key) => (isJsonObject(node) ? node[key] : undefined),
+    value,
+  );
+}
+
+export function keysOf(value: Json | undefined): string[] {
+  return isJsonObject(value) ? Object.keys(value) : [];
+}
+
 export interface LogLine {
-  t: string;
-  level: string;
   msg: string;
-  data?: Record<string, unknown>;
+  data: Json | undefined;
+}
+
+function toLogLine(text: string): LogLine {
+  const line = parseJson(text);
+  return { msg: String(at(line, "msg")), data: at(line, "data") };
 }
 
 export interface RunResult {
@@ -100,7 +126,7 @@ export function createLiveEnv(): LiveEnv {
         return readFileSync(logFile, "utf8")
           .split("\n")
           .filter((line) => line.length > 0)
-          .map((line) => JSON.parse(line) as LogLine);
+          .map(toLogLine);
       } catch {
         return [];
       }
@@ -114,11 +140,11 @@ export function writeFixture(dir: string, name: string, content: string): string
   return file;
 }
 
-export function probeLines(env: LiveEnv, msg: string): Record<string, unknown>[] {
+export function probeLines(env: LiveEnv, msg: string): Array<Json | undefined> {
   return env
     .logLines()
     .filter((line) => line.msg === msg)
-    .map((line) => line.data ?? {});
+    .map((line) => line.data);
 }
 
 const POLL_MS = 100;
@@ -177,8 +203,11 @@ async function startServer(
     stop: () => proc.kill(),
     async newSession() {
       const response = await post("/session", {});
-      const session = (await response.json()) as { id: string };
-      return session.id;
+      const id = at(parseJson(await response.text()), "id");
+      if (typeof id !== "string") {
+        throw new Error(`POST /session returned no id (status ${response.status})`);
+      }
+      return id;
     },
     async prompt(sessionID, text) {
       const model = { providerID: "opencode", modelID: LIVE_MODEL.split("/")[1] };

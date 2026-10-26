@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { createLiveEnv, writeFixture } from "./harness";
+import { at, createLiveEnv, keysOf, writeFixture } from "./harness";
 
 const PROBE = resolve(import.meta.dir, "probe-plugin.ts");
 const PROMPT = "reply with the single word: pong";
 
 function loadedCount(env: ReturnType<typeof createLiveEnv>): number {
-  return env.logLines().filter((line) => line.msg === "hook" && line.data?.hook === "config")
+  return env.logLines().filter((line) => line.msg === "hook" && at(line.data, "hook") === "config")
     .length;
 }
 
@@ -20,8 +20,8 @@ describe("plugin loading", () => {
 
     expect(result.exitCode).toBe(0);
     const loaded = env.logLines().find((line) => line.msg === "plugin loaded");
-    expect(Object.keys(loaded?.data ?? {})).toContain("inputKeys");
-    expect(loaded?.data?.inputKeys).toEqual([
+    expect(keysOf(loaded?.data)).toContain("inputKeys");
+    expect(at(loaded?.data, "inputKeys")).toEqual([
       "client",
       "project",
       "worktree",

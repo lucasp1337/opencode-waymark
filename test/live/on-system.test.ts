@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { liveEnvWithProbe, probeLines } from "./harness";
+import { at, liveEnvWithProbe, probeLines } from "./harness";
 
 describe("onSystem", () => {
   test("text returned by the handler is visible to the agent in its system prompt", async () => {
@@ -15,7 +15,7 @@ describe("onSystem", () => {
 
     await env.run("reply with the single word: pong");
 
-    const ids = probeLines(env, "probe.system").map((line) => String(line.sessionID));
+    const ids = probeLines(env, "probe.system").map((line) => String(at(line, "sessionID")));
     expect(ids.length).toBeGreaterThan(0);
     expect(ids.every((id) => id.startsWith("ses_"))).toBe(true);
   });

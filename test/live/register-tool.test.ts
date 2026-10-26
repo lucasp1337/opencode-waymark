@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { liveEnvWithProbe, probeLines } from "./harness";
+import { at, liveEnvWithProbe, probeLines } from "./harness";
 
 describe("registerTool", () => {
   test("agent can call a plugin tool built from plain JSON Schema with all supported types", async () => {
@@ -11,7 +11,12 @@ describe("registerTool", () => {
 
     const calls = probeLines(env, "probe.tool.execute");
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.input).toEqual({ message: "hello", times: 2, mode: "loud", tags: ["a", "b"] });
+    expect(at(calls[0], "input")).toEqual({
+      message: "hello",
+      times: 2,
+      mode: "loud",
+      tags: ["a", "b"],
+    });
   });
 
   test("tool execute context carries the session id and the agent name", async () => {
@@ -19,9 +24,9 @@ describe("registerTool", () => {
 
     await env.run("Call the probe_echo tool once with message hi. Then say DONE.");
 
-    const ctx = probeLines(env, "probe.tool.execute")[0]?.ctx as Record<string, unknown>;
-    expect(String(ctx.sessionID)).toStartWith("ses_");
-    expect(ctx.agent).toBe("build");
+    const [call] = probeLines(env, "probe.tool.execute");
+    expect(String(at(call, "ctx", "sessionID"))).toStartWith("ses_");
+    expect(at(call, "ctx", "agent")).toBe("build");
   });
 
   test("the string returned by execute reaches the agent as the tool result", async () => {

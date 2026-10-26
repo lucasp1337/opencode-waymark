@@ -1,18 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
-import { type LiveEnv, liveEnvWithProbe, probeLines, writeFixture } from "./harness";
+import {
+  at,
+  type Json,
+  keysOf,
+  type LiveEnv,
+  liveEnvWithProbe,
+  probeLines,
+  writeFixture,
+} from "./harness";
 
-interface AfterCall {
-  tool: string;
-  args: Record<string, unknown>;
-  touchedPaths: string[];
-  command?: string;
-}
-
-function afterCalls(env: LiveEnv, tool: string): AfterCall[] {
+function afterCalls(env: LiveEnv, tool: string): Array<Json | undefined> {
   return probeLines(env, "probe.tool.after")
-    .map((line) => line.call as AfterCall)
-    .filter((call) => call.tool === tool);
+    .map((line) => at(line, "call"))
+    .filter((call) => at(call, "tool") === tool);
 }
 
 const SEEN = "Then list every WAYMARK_PROBE_ marker you saw in tool results.";
@@ -66,8 +67,8 @@ describe("onToolAfter", () => {
       const [call] = afterCalls(env, item.tool);
       expect(call).toBeDefined();
       if (item.pathArg !== undefined) {
-        expect(call?.touchedPaths.length).toBeGreaterThan(0);
-        expect(Object.keys(call?.args ?? {})).toContain(item.pathArg);
+        expect(at(call, "touchedPaths")).toEqual(expect.arrayContaining([expect.any(String)]));
+        expect(keysOf(at(call, "args"))).toContain(item.pathArg);
       }
       expect(result.stdout).toContain(`WAYMARK_PROBE_${item.tool}`);
     });
@@ -78,7 +79,7 @@ describe("onToolAfter", () => {
 
     await env.run(`Use the bash tool to run: echo marker-check. ${SEEN}`);
 
-    expect(afterCalls(env, "bash")[0]?.command).toStartWith("echo marker-check");
+    expect(String(at(afterCalls(env, "bash")[0], "command"))).toStartWith("echo marker-check");
   });
 
   test("mcp tool: hook fires and the marker reaches the agent", async () => {

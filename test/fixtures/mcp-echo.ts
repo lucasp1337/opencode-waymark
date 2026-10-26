@@ -23,8 +23,15 @@ const handlers: Record<string, (id: unknown) => void> = {
 };
 
 for await (const line of console) {
-  const message = JSON.parse(line) as { id?: unknown; method: string };
-  if (message.id !== undefined) {
+  const message: unknown = JSON.parse(line);
+  // Notifications carry no id and need no reply.
+  if (
+    typeof message === "object" &&
+    message !== null &&
+    "id" in message &&
+    "method" in message &&
+    typeof message.method === "string"
+  ) {
     handlers[message.method]?.(message.id);
   }
 }
