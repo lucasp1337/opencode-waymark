@@ -121,6 +121,19 @@ export function probeLines(env: LiveEnv, msg: string): Record<string, unknown>[]
     .map((line) => line.data ?? {});
 }
 
+const POLL_MS = 100;
+
+// Host work after an API call (instance load, dispose) finishes asynchronously; poll the log for it.
+export async function waitUntil(condition: () => boolean, timeoutMs = 30_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) {
+      throw new Error(`condition not met within ${timeoutMs}ms`);
+    }
+    await Bun.sleep(POLL_MS);
+  }
+}
+
 export function liveEnvWithProbe(): LiveEnv {
   const env = createLiveEnv();
   env.installPlugin("waymark-probe", "test/live/probe-plugin.ts");
