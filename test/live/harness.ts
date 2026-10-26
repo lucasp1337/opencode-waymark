@@ -38,7 +38,23 @@ export interface LogLine {
 
 function toLogLine(text: string): LogLine {
   const line = parseJson(text);
-  return { msg: String(at(line, "msg")), data: at(line, "data") };
+  const msg = at(line, "msg");
+  if (typeof msg !== "string") {
+    throw new Error(`log line without msg: ${text}`);
+  }
+  return { msg, data: at(line, "data") };
+}
+
+function readLog(file: string): string {
+  try {
+    return readFileSync(file, "utf8");
+  } catch (error) {
+    // Nothing logged yet is a normal state; anything else must surface.
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return "";
+    }
+    throw error;
+  }
 }
 
 export interface RunResult {
@@ -61,7 +77,7 @@ export interface ServerHandle {
   api(path: string, init?: RequestInit): Promise<Response>;
   newSession(): Promise<string>;
   prompt(sessionID: string, text: string): Promise<void>;
-  stop(): void;
+  stop(): Promise<void>;
 }
 
 // Every run is sandboxed: own config, data, state and cache dirs, so the user's real opencode setup
@@ -122,14 +138,10 @@ export function createLiveEnv(): LiveEnv {
     },
     serve: () => startServer(dirs.work, sandboxEnv),
     logLines() {
-      try {
-        return readFileSync(logFile, "utf8")
-          .split("\n")
-          .filter((line) => line.length > 0)
-          .map(toLogLine);
-      } catch {
-        return [];
-      }
+      return readLog(logFile)
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map(toLogLine);
     },
   };
 }
@@ -200,12 +212,16 @@ async function startServer(
     });
   return {
     api,
-    stop: () => proc.kill(),
+    async stop() {
+      proc.kill();
+      await proc.exited;
+    },
     async newSession() {
       const response = await post("/session", {});
-      const id = at(parseJson(await response.text()), "id");
+      const body = await response.text();
+      const id = response.ok ? at(parseJson(body), "id") : undefined;
       if (typeof id !== "string") {
-        throw new Error(`POST /session returned no id (status ${response.status})`);
+        throw new Error(`POST /session failed (status ${response.status}): ${body}`);
       }
       return id;
     },

@@ -18,7 +18,7 @@ describe("onCompaction", () => {
       expect(response.ok).toBe(true);
       expect(probeLines(env, "probe.compaction")).toHaveLength(1);
     } finally {
-      server.stop();
+      await server.stop();
     }
   });
 
@@ -38,7 +38,7 @@ describe("onCompaction", () => {
       const messages = await (await server.api(`/session/${sessionID}/message`)).text();
       expect(messages).toContain("WAYMARK_COMPACT_MARKER_4K9");
     } finally {
-      server.stop();
+      await server.stop();
     }
   });
 });

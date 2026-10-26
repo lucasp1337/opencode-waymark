@@ -14,5 +14,5 @@ try {
     console.log(JSON.stringify(line));
   }
 } finally {
-  server.stop();
+  await server.stop();
 }

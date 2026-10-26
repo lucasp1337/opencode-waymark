@@ -1,5 +1,6 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createFileLogger, type Logger, logFilePath } from "../../../src/logger";
 
@@ -28,13 +29,24 @@ interface OrtWeb {
   };
 }
 
+function hasMethod(target: unknown, name: string): boolean {
+  return (
+    (typeof target === "object" || typeof target === "function") &&
+    target !== null &&
+    typeof Reflect.get(target, name) === "function"
+  );
+}
+
 // The one parse boundary of this bench: the dynamically imported runtime module is untyped.
+// Checks the entry points; their call signatures are trusted from the onnxruntime-web docs.
 function isOrtWeb(value: unknown): value is OrtWeb {
   return (
     typeof value === "object" &&
     value !== null &&
     "InferenceSession" in value &&
+    hasMethod(value.InferenceSession, "create") &&
     "Tensor" in value &&
+    typeof value.Tensor === "function" &&
     "env" in value
   );
 }
@@ -58,7 +70,7 @@ function dependencyNames(pkgDir: string): string[] {
 }
 
 // Bun installs flat, so every transitive dependency sits directly under node_modules.
-function installBytes(root: string): number {
+function installedPackages(root: string): string[] {
   const seen = new Set<string>();
   const queue = [root];
   for (let name = queue.pop(); name !== undefined; name = queue.pop()) {
@@ -68,10 +80,22 @@ function installBytes(root: string): number {
       queue.push(...dependencyNames(dir));
     }
   }
-  return [...seen].reduce((sum, name) => sum + dirBytes(join(REPO_ROOT, "node_modules", name)), 0);
+  return [...seen];
 }
 
 const mb = (bytes: number): number => Math.round(bytes / 1e5) / 10;
+
+// Apparent file sizes (not disk blocks), total plus every package of 1 MB or more.
+function installSize(root: string): { totalMb: number; packagesMb: Record<string, number> } {
+  const sizes = installedPackages(root).map(
+    (name) => [name, dirBytes(join(REPO_ROOT, "node_modules", name))] as const,
+  );
+  const large = sizes.filter(([, bytes]) => bytes >= 1e6).sort((a, b) => b[1] - a[1]);
+  return {
+    totalMb: mb(sizes.reduce((sum, [, bytes]) => sum + bytes, 0)),
+    packagesMb: Object.fromEntries(large.map(([name, bytes]) => [name, mb(bytes)])),
+  };
+}
 
 function rssMb(): number {
   return mb(process.memoryUsage().rss);
@@ -87,6 +111,8 @@ async function loadWasmRuntime(): Promise<OrtWeb> {
   }
   // Local wasm files; otherwise transformers points onnxruntime at a CDN.
   ort.env.wasm.wasmPaths = `${dirname(ortPath)}/`;
+  // transformers picks its runtime from this global symbol; without it Node-like runtimes get the
+  // native onnxruntime-node backend instead of WASM. Bench-only.
   Reflect.set(globalThis, Symbol.for("onnxruntime"), ort);
   return ort;
 }
@@ -143,7 +169,8 @@ async function wasmSmoke(ort: OrtWeb): Promise<{ output: number[]; ms: number }>
   return { output: Array.from(result.y?.data ?? []), ms: performance.now() - start };
 }
 
-function cosine(a: number[], b: number[]): number {
+// Equals cosine similarity because the pipeline returns normalized vectors.
+function dot(a: number[], b: number[]): number {
   return a.reduce((sum, value, i) => sum + value * (b[i] ?? 0), 0);
 }
 
@@ -167,48 +194,59 @@ async function embedSentences(cacheDir: string): Promise<Record<string, unknown>
     coldStartMs,
     perEmbeddingMs,
     rssIncreaseMb: rssMb() - rssBefore,
-    similarity: vectors.map((a) => vectors.map((b) => Math.round(cosine(a, b) * 1000) / 1000)),
+    similarity: vectors.map((a) => vectors.map((b) => Math.round(dot(a, b) * 1000) / 1000)),
   };
 }
 
-async function stage(logger: Logger, name: string, run: () => Promise<unknown>): Promise<void> {
+type StageOutcome<T> = { ok: true; value: T } | { ok: false };
+
+// Logs the stage's result or error, so one failing stage never stops the others.
+async function stage<T>(
+  logger: Logger,
+  name: string,
+  run: () => Promise<{ value: T; logged: unknown }>,
+): Promise<StageOutcome<T>> {
   try {
-    logger.log("info", "bench.stage", { name, result: await run() });
+    const { value, logged } = await run();
+    logger.log("info", "bench.stage", { name, result: logged });
+    return { ok: true, value };
   } catch (error) {
     logger.log("error", "bench.stage", { name, error: String(error) });
+    return { ok: false };
   }
 }
 
-async function importRuntime(logger: Logger): Promise<OrtWeb | undefined> {
+const logged = async <T>(result: Promise<T>) => {
+  const value = await result;
+  return { value, logged: value };
+};
+
+async function importRuntime(): Promise<{ value: OrtWeb; logged: unknown }> {
   const rssStart = rssMb();
   const start = performance.now();
-  try {
-    const ort = await loadWasmRuntime();
-    await import("@huggingface/transformers");
-    const result = { importMs: performance.now() - start, rssIncreaseMb: rssMb() - rssStart };
-    logger.log("info", "bench.stage", { name: "runtime import", result });
-    return ort;
-  } catch (error) {
-    logger.log("error", "bench.stage", { name: "runtime import", error: String(error) });
-    return undefined;
-  }
+  const ort = await loadWasmRuntime();
+  await import("@huggingface/transformers");
+  return {
+    value: ort,
+    logged: { importMs: performance.now() - start, rssIncreaseMb: rssMb() - rssStart },
+  };
 }
 
 async function runBench(logger: Logger, cacheDir: string): Promise<void> {
   await stage(logger, "install", () =>
-    Promise.resolve({ installMb: mb(installBytes("@huggingface/transformers")) }),
+    logged(Promise.resolve(installSize("@huggingface/transformers"))),
   );
-  const ort = await importRuntime(logger);
-  if (ort !== undefined) {
-    await stage(logger, "wasm smoke", () => wasmSmoke(ort));
+  const runtime = await stage(logger, "runtime import", importRuntime);
+  if (runtime.ok) {
+    await stage(logger, "wasm smoke", () => logged(wasmSmoke(runtime.value)));
   }
-  await stage(logger, "embed", () => embedSentences(cacheDir));
+  await stage(logger, "embed", () => logged(embedSentences(cacheDir)));
   logger.log("info", "bench.done");
 }
 
 const server = () => {
   const logger = createFileLogger(logFilePath(process.env), () => new Date());
-  const cacheDir = join(process.env.XDG_DATA_HOME ?? REPO_ROOT, "bench-models");
+  const cacheDir = join(process.env.XDG_DATA_HOME ?? tmpdir(), "waymark-bench-models");
   // Not awaited: the bench must not hold up opencode's instance start.
   void runBench(logger, cacheDir);
   return Promise.resolve({});
