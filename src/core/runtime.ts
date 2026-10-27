@@ -1,9 +1,12 @@
 import { join } from "node:path";
 import { type ConfigStore, openConfigStore } from "./config/config-store";
+import { memoryCommandTool } from "./features/commands/memory-command";
+import { commandTemplates } from "./features/commands/templates";
 import { guardedTool } from "./features/guarded-tool";
 import { compactionNote } from "./features/lifecycle/compaction";
 import { DEFAULT_LIFECYCLE } from "./features/lifecycle/lifecycle-settings";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
+import { createReviewSignals } from "./features/lifecycle/review-signals";
 import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
 import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
@@ -15,6 +18,7 @@ import { memorySaveTool } from "./features/save/memory-save";
 import { memoryUpdateTool } from "./features/save/memory-update";
 import { createFirstSessionNotice } from "./features/setup/first-session";
 import { memoryConfigTool } from "./features/setup/memory-config";
+import { SETUP_INSTRUCTIONS } from "./features/setup/setup-command";
 import { withToastSetting } from "./features/setup/toast-setting";
 import type { ToolDeps } from "./features/tool-deps";
 import type { MemoryId } from "./model/id";
@@ -94,6 +98,13 @@ function registerTools(wiring: Wiring): void {
     caps,
     retriever: createRetriever({ store, vectors, embedder, log: host.log }),
   };
+  const reviewSignals = createReviewSignals({
+    store,
+    counters,
+    now: deps.now,
+    indexExit: () => config.current().indexExit,
+    noisy: DEFAULT_LIFECYCLE.noisy,
+  });
   const tools = [
     memorySaveTool(toolDeps),
     memoryUpdateTool(toolDeps),
@@ -101,9 +112,13 @@ function registerTools(wiring: Wiring): void {
     memorySearchTool(toolDeps),
     memoryForgetTool(toolDeps),
     memoryConfigTool({ config }),
+    memoryCommandTool({ ...toolDeps, reviewSignals }),
   ];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool));
+  }
+  for (const command of commandTemplates(SETUP_INSTRUCTIONS)) {
+    host.registerCommand(command.name, command.description, command.template);
   }
 }
 

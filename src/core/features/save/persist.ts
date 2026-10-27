@@ -10,6 +10,7 @@ import { budgetRefusalText } from "./budget-refusal";
 const WORDING = {
   saved: { done: "Saved", refused: "Not saved" },
   updated: { done: "Updated", refused: "Not updated" },
+  moved: { done: "Moved", refused: "Not moved" },
 } as const;
 
 // The shared tail of every save: budget, atomic write, toast.

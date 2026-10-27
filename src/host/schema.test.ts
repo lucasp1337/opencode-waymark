@@ -101,6 +101,7 @@ describe("Waymark's tool schemas", () => {
         "compactionSave",
         "toasts",
       ],
+      ["args"],
     ]);
   });
 });

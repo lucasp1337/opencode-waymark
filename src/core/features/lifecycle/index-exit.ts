@@ -16,7 +16,7 @@ function statsOf(memory: Memory, usage: IndexUsage): MemoryStats {
 }
 
 // A memory never read counts its age from creation.
-function hasLeftIndex(memory: Memory, usage: IndexUsage): boolean {
+export function hasLeftIndex(memory: Memory, usage: IndexUsage): boolean {
   const stats = statsOf(memory, usage);
   const since = stats.lastRead?.getTime() ?? Date.parse(memory.created);
   return (

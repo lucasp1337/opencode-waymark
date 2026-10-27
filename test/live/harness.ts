@@ -11,7 +11,7 @@ const RUN_TIMEOUT_MS = 120_000;
 export type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 // The single parse boundary of the live suite: JSON.parse only ever yields JSON values.
-function parseJson(text: string): Json {
+export function parseJson(text: string): Json {
   return JSON.parse(text);
 }
 
