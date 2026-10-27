@@ -1,10 +1,11 @@
 import { err, type Result } from "../model/result";
-import type { ScopeChain, ScopeRef } from "../model/scope";
+import { repoIdIn, type ScopeChain, type ScopeRef } from "../model/scope";
 import { notify } from "../notify";
 import type { HostPort } from "../port";
 import type { FileSystem } from "../store/fs";
 import { type ResolvedScopes, resolveScopes } from "./chain";
 import type { Git } from "./git";
+import { productOf } from "./products";
 import { type OrgEntry, type OrgRef, resolveOrg } from "./registry";
 
 export interface SessionScopes {
@@ -42,17 +43,21 @@ function resolveFor(deps: SessionScopeDeps, directory: string): Resolution {
   return { resolved, cacheable: true };
 }
 
-function enterOrg(deps: SessionScopeDeps, org: OrgRef): Result<OrgEntry, string> {
+function fromRegistry<T>(read: () => Result<T, string>): Result<T, string> {
   try {
-    return resolveOrg(deps.fs, deps.registryFile, org);
+    return read();
   } catch (error) {
     return err(String(error));
   }
 }
 
-// The registry is read on every call, not cached with the chain, so a merge applies to later
-// calls of sessions already running in the merged org's repos. Recall pins a session's chain when
-// it starts, so those sessions get the merge through tool calls only.
+function enterOrg(deps: SessionScopeDeps, org: OrgRef): Result<OrgEntry, string> {
+  return fromRegistry(() => resolveOrg(deps.fs, deps.registryFile, org));
+}
+
+// The registry is read on every call, not cached with the chain, so a merge or a product link
+// applies to later calls of sessions already running in the affected repos. Recall pins a
+// session's chain when it starts, so those sessions get the change through tool calls only.
 async function withOrg(
   deps: SessionScopeDeps,
   { chain, org }: ResolvedScopes,
@@ -73,6 +78,29 @@ async function withOrg(
   );
 }
 
+// A linked repo's product sits between its org and the repo itself.
+function withProduct(deps: SessionScopeDeps, chain: ScopeChain): ScopeChain {
+  const repo = repoIdIn(chain);
+  if (repo === undefined) {
+    return chain;
+  }
+  const product = fromRegistry(() => productOf(deps.fs, deps.registryFile, repo));
+  if (!product.ok) {
+    deps.host.log("warn", "product links not applied", { repo, error: product.error });
+    return chain;
+  }
+  const id = product.value;
+  return id === undefined
+    ? chain
+    : chain.flatMap((scope): ScopeRef[] =>
+        scope.level === "repo" ? [{ level: "product", id }, scope] : [scope],
+      );
+}
+
+async function withRegistry(deps: SessionScopeDeps, resolved: ResolvedScopes): Promise<ScopeChain> {
+  return withProduct(deps, await withOrg(deps, resolved));
+}
+
 // Git is asked once per directory: the repo a directory belongs to does not change while the
 // plugin is active.
 export function createSessionScopes(deps: SessionScopeDeps): SessionScopes {
@@ -82,13 +110,13 @@ export function createSessionScopes(deps: SessionScopeDeps): SessionScopes {
       const { directory } = await deps.host.sessionMeta(sessionID);
       const known = resolutions.get(directory);
       if (known !== undefined) {
-        return await withOrg(deps, known);
+        return await withRegistry(deps, known);
       }
       const { resolved, cacheable } = resolveFor(deps, directory);
       if (cacheable) {
         resolutions.set(directory, resolved);
       }
-      return await withOrg(deps, resolved);
+      return await withRegistry(deps, resolved);
     },
   };
 }

@@ -47,3 +47,13 @@ export function parseScopeKey(key: string): Result<ScopeRef, string> {
 export function scopeAt(chain: ScopeChain, level: ScopeLevel): ScopeRef | undefined {
   return chain.find((scope) => scope.level === level);
 }
+
+// The id of the repo a chain ends in, when its session runs in one.
+export function repoIdIn(chain: ScopeChain): string | undefined {
+  for (const scope of chain) {
+    if (scope.level === "repo") {
+      return scope.id;
+    }
+  }
+  return undefined;
+}

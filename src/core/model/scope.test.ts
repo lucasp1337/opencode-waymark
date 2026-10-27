@@ -3,6 +3,7 @@ import {
   isSafeScopeId,
   isScopeLevel,
   parseScopeKey,
+  repoIdIn,
   type ScopeChain,
   scopeAt,
   scopeKey,
@@ -44,6 +45,22 @@ describe("scopeAt", () => {
 
     expect(scopeAt(chain, "repo")).toEqual({ level: "repo", id: "github.com/acme/api" });
     expect(scopeAt(chain, "org")).toBeUndefined();
+  });
+});
+
+describe("repoIdIn", () => {
+  test("is the id of the chain's repo scope", () => {
+    const chain: ScopeChain = [
+      { level: "user" },
+      { level: "product", id: "payments" },
+      { level: "repo", id: "github.com/acme/api" },
+    ];
+
+    expect(repoIdIn(chain)).toBe("github.com/acme/api");
+  });
+
+  test("is undefined for a chain without a repo", () => {
+    expect(repoIdIn([{ level: "user" }])).toBeUndefined();
   });
 });
 

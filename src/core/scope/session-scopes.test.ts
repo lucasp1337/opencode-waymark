@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { createFakeHost, type FakeHost } from "../../../test/fake-host";
 import { useTempDirs } from "../../../test/temp-dir";
+import { repoIdIn } from "../model/scope";
 import { type FileSystem, nodeFileSystem } from "../store/fs";
 import type { Git, GitAnswer } from "./git";
+import { linkRepos } from "./products";
 import { recordMerge, resolveOrg } from "./registry";
 import { createSessionScopes, type SessionScopes } from "./session-scopes";
 
@@ -112,7 +114,7 @@ describe("createSessionScopes", () => {
     expect(host.logs.map((entry) => entry.msg)).toEqual(["repo identified by its root path"]);
   });
 
-  test("logs an unreadable org registry and does not toast", async () => {
+  test("logs an unreadable registry for the org and the product and does not toast", async () => {
     const host = hostWith({ ses_a: "/work/api" });
     const registryFile = join(tempDir(), "registry.json");
     nodeFileSystem.writeAtomic(registryFile, "{ not json");
@@ -120,7 +122,10 @@ describe("createSessionScopes", () => {
     await scopesFor(host, gitAnswering(found("/work/api")), registryFile).chainFor("ses_a");
 
     expect(host.toasts).toEqual([]);
-    expect(host.logs.map((entry) => entry.msg)).toEqual(["org registry not applied"]);
+    expect(host.logs.map((entry) => entry.msg)).toEqual([
+      "org registry not applied",
+      "product links not applied",
+    ]);
   });
 
   test("an org merged into another resolves to the other", async () => {
@@ -169,7 +174,7 @@ describe("createSessionScopes", () => {
     expect(host.toasts).toEqual([]);
   });
 
-  test("a registry that cannot be read logs once and leaves the chain as git found it", async () => {
+  test("a registry that cannot be read is logged and leaves the chain as git found it", async () => {
     const host = hostWith({ ses_a: "/work/api" });
     const unreadable: FileSystem = {
       ...nodeFileSystem,
@@ -193,6 +198,71 @@ describe("createSessionScopes", () => {
         msg: "org registry not applied",
         data: { org: "github.com/acme", error: "Error: EACCES: permission denied" },
       },
+      {
+        level: "warn",
+        msg: "product links not applied",
+        data: { repo: "github.com/acme/api", error: "Error: EACCES: permission denied" },
+      },
     ]);
+  });
+
+  test("a linked repo's chain has its product between the org and the repo", async () => {
+    const registryFile = join(tempDir(), "registry.json");
+    linkRepos(nodeFileSystem, registryFile, {
+      repos: ["github.com/acme/api", "github.com/acme/web"],
+      product: "payments",
+    });
+    const host = hostWith({ ses_a: "/work/api" });
+
+    const chain = await scopesFor(host, gitAnswering(found("/work/api")), registryFile).chainFor(
+      "ses_a",
+    );
+
+    expect(chain).toEqual([
+      { level: "user" },
+      { level: "org", id: "github.com/acme" },
+      { level: "product", id: "payments" },
+      { level: "repo", id: "github.com/acme/api" },
+    ]);
+  });
+
+  test("a repo without an origin can be linked too", async () => {
+    const registryFile = join(tempDir(), "registry.json");
+    const host = hostWith({ ses_a: "/work/api" });
+    const scopes = scopesFor(
+      host,
+      gitAnswering(found("/work/api"), { status: "absent" }),
+      registryFile,
+    );
+    const repoId = repoIdIn(await scopes.chainFor("ses_a")) ?? "";
+    linkRepos(nodeFileSystem, registryFile, { repos: [repoId], product: "notes" });
+
+    expect(await scopes.chainFor("ses_a")).toEqual([
+      { level: "user" },
+      { level: "product", id: "notes" },
+      { level: "repo", id: repoId },
+    ]);
+  });
+
+  test("a link recorded after the chain was cached applies to the next call", async () => {
+    const registryFile = join(tempDir(), "registry.json");
+    const host = hostWith({ ses_a: "/work/api" });
+    const scopes = scopesFor(host, gitAnswering(found("/work/api")), registryFile);
+    await scopes.chainFor("ses_a");
+    linkRepos(nodeFileSystem, registryFile, {
+      repos: ["github.com/acme/api"],
+      product: "payments",
+    });
+
+    expect(await scopes.chainFor("ses_a")).toContainEqual({ level: "product", id: "payments" });
+  });
+
+  test("a session outside any repo has no product to look up", async () => {
+    const host = hostWith({ ses_a: "/tmp" });
+
+    const chain = await scopesFor(host, gitAnswering({ status: "absent" })).chainFor("ses_a");
+
+    expect(chain).toEqual([{ level: "user" }]);
+    expect(host.logs).toEqual([]);
   });
 });
