@@ -181,6 +181,12 @@ export function liveEnvWithProbe(): LiveEnv {
   return env;
 }
 
+export function liveEnvWithWaymark(): LiveEnv {
+  const env = createLiveEnv();
+  env.installPlugin("waymark", "src/index.ts");
+  return env;
+}
+
 async function readListeningUrl(stdout: ReadableStream<Uint8Array>): Promise<string> {
   const decoder = new TextDecoder();
   let seen = "";

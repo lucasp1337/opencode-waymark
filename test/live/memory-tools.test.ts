@@ -6,19 +6,13 @@ import { nodeFileSystem } from "../../src/core/store/fs";
 import { createMemoryFiles } from "../../src/core/store/memory-files";
 import { memoryId } from "../memory-id";
 import { validContent } from "../valid-content";
-import { at, createLiveEnv, type LiveEnv, probeLines, waitUntil } from "./harness";
+import { at, type LiveEnv, liveEnvWithWaymark, probeLines, waitUntil } from "./harness";
 
 function syncedCounts(env: LiveEnv): Array<{ indexed: unknown; removed: unknown }> {
   return probeLines(env, "memory cache synced").map((line) => ({
     indexed: at(line, "indexed"),
     removed: at(line, "removed"),
   }));
-}
-
-function waymarkEnv(): LiveEnv {
-  const env = createLiveEnv();
-  env.installPlugin("waymark", "src/index.ts");
-  return env;
 }
 
 async function activateOnce(env: LiveEnv, activations: number): Promise<void> {
@@ -33,7 +27,7 @@ async function activateOnce(env: LiveEnv, activations: number): Promise<void> {
 
 describe("memory store in a real opencode process", () => {
   test("activation indexes memory files and a deleted cache is rebuilt on the next start", async () => {
-    const env = waymarkEnv();
+    const env = liveEnvWithWaymark();
     const dataDir = join(env.dataHome, "waymark");
     createMemoryFiles(dataDir, nodeFileSystem).write(
       newMemory(validContent({ kind: "fact", title: "Seeded", body: "From disk." }), {
@@ -55,7 +49,7 @@ describe("memory store in a real opencode process", () => {
   });
 
   test("dispose reaches the runtime and releases the store without errors", async () => {
-    const env = waymarkEnv();
+    const env = liveEnvWithWaymark();
     const server = await env.serve();
     try {
       await server.newSession();
@@ -74,7 +68,7 @@ describe("memory store in a real opencode process", () => {
 
 describe("memory tools through the agent", () => {
   test("memory_save called by the agent writes a user memory file", async () => {
-    const env = waymarkEnv();
+    const env = liveEnvWithWaymark();
 
     await env.run(
       "Call the memory_save tool once with kind fact, scope user, title Staging resets nightly, body All data is wiped at 02:00. Then say DONE.",

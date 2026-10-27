@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { type ConfigStore, openConfigStore } from "./config/config-store";
 import { guardedTool } from "./features/guarded-tool";
+import { compactionNote } from "./features/lifecycle/compaction";
 import { DEFAULT_LIFECYCLE } from "./features/lifecycle/lifecycle-settings";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
 import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
@@ -150,6 +151,13 @@ function registerJit({ host, store, counters }: Wiring, recallScope: RecallScope
   return jit;
 }
 
+// Sessions without recall get no compaction note either.
+function registerCompaction({ host, config }: Wiring, recallScope: RecallScopeOf): void {
+  host.onCompaction(async (sessionID) =>
+    (await recallScope(sessionID)) === null ? null : compactionNote(config.current()),
+  );
+}
+
 // Recall reaches the agent through the system prompt and tool outputs; a host lacking either
 // degrades to the rest.
 function registerRecall(wiring: Wiring): void {
@@ -162,6 +170,9 @@ function registerRecall(wiring: Wiring): void {
   }
   if (host.capabilities.toolOutputMutation) {
     forgetters.push(registerJit(wiring, recallScope));
+  }
+  if (host.capabilities.compactionHook) {
+    registerCompaction(wiring, recallScope);
   }
   // Per-session state would otherwise grow for as long as opencode runs.
   host.onSessionEvent((event) => {
