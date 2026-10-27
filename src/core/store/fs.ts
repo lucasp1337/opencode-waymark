@@ -19,6 +19,9 @@ export interface FileSystem {
   // Writes `<path>.tmp`, fsyncs it, then renames over `path`, creating parent dirs.
   writeAtomic(path: string, text: string): void;
   remove(path: string): void;
+  // Renames `from` to `to`, creating parent dirs and replacing any file already at `to`. Throws
+  // when `from` does not exist.
+  move(from: string, to: string): void;
   // Every file below `dir`, recursively; empty when `dir` does not exist.
   listFiles(dir: string): string[];
   // undefined when the file does not exist.
@@ -40,6 +43,11 @@ function writeAtomic(path: string, text: string): void {
     closeSync(fd);
   }
   renameSync(tmp, path);
+}
+
+function move(from: string, to: string): void {
+  mkdirSync(dirname(to), { recursive: true });
+  renameSync(from, to);
 }
 
 function listFiles(dir: string): string[] {
@@ -68,6 +76,7 @@ export const nodeFileSystem: FileSystem = {
   },
   writeAtomic,
   remove: (path) => rmSync(path, { force: true }),
+  move,
   listFiles,
   mtimeMs: (path) => statSync(path, { throwIfNoEntry: false })?.mtimeMs,
 };

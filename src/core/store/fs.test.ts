@@ -66,6 +66,36 @@ describe("nodeFileSystem", () => {
     expect(fs.readText(file)).toBeUndefined();
   });
 
+  test("move renames a file, creating the parent dirs of the target", () => {
+    const dir = tempDir();
+    const from = join(dir, "old", "m.md");
+    const to = join(dir, "new", "deeper", "m.md");
+    fs.writeAtomic(from, "content");
+
+    fs.move(from, to);
+
+    expect(fs.readText(to)).toBe("content");
+    expect(fs.readText(from)).toBeUndefined();
+  });
+
+  test("move replaces a file that is already at the target", () => {
+    const dir = tempDir();
+    const from = join(dir, "from.md");
+    const to = join(dir, "to.md");
+    fs.writeAtomic(from, "new");
+    fs.writeAtomic(to, "old");
+
+    fs.move(from, to);
+
+    expect(fs.readText(to)).toBe("new");
+  });
+
+  test("move throws when the source does not exist", () => {
+    const dir = tempDir();
+
+    expect(() => fs.move(join(dir, "missing.md"), join(dir, "to.md"))).toThrow();
+  });
+
   test("mtimeMs reports the modification time of an existing file", () => {
     const file = join(tempDir(), "m.md");
     fs.writeAtomic(file, "x");
