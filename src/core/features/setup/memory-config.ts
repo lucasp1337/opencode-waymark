@@ -66,6 +66,10 @@ function configValue(input: unknown): Record<string, unknown> {
   };
 }
 
+// A session's block and its recall are fixed when it starts, so these settings reach the next one.
+const SAVED =
+  "Settings saved. Caps, compaction save and toasts apply now; index size, index exit and subagents from the next session.";
+
 function notChanged(problems: readonly string[]): string {
   return `Not changed: ${problems.join("; ")}`;
 }
@@ -80,7 +84,7 @@ function changeSettings(deps: ConfigToolDeps, input: unknown): string {
   }
   const updated = deps.config.update(patch.value);
   return updated.ok
-    ? ["Settings saved. Now in effect:", ...describeSettings(updated.value)].join("\n")
+    ? [SAVED, ...describeSettings(updated.value)].join("\n")
     : notChanged(updated.error);
 }
 

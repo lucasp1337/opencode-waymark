@@ -184,6 +184,35 @@ describe("current with an unreadable file", () => {
   });
 });
 
+describe("current with a file that cannot be examined", () => {
+  test("gives the defaults", () => {
+    const { store } = setup({ mtimeMs: unreadable });
+
+    expect(store.current()).toEqual(settingsFrom({}));
+  });
+
+  test("logs once until the file can be examined again", () => {
+    let broken = true;
+    const { store, file, logs } = setup({
+      mtimeMs: (path) => (broken ? unreadable() : nodeFileSystem.mtimeMs(path)),
+    });
+
+    store.current();
+    store.current();
+    broken = false;
+    writeConfig(file, '{"preset": "rich"}', 1000);
+
+    expect(store.current()).toEqual(settingsFrom({ preset: "rich" }));
+    expect(logs).toEqual([
+      {
+        level: "warn",
+        msg: "config file unusable; using defaults",
+        data: { file, problems: ["cannot examine the file: Error: EACCES: permission denied"] },
+      },
+    ]);
+  });
+});
+
 describe("exists", () => {
   test("is false until the file is written", () => {
     const { store, file } = setup();
@@ -208,7 +237,7 @@ describe("exists", () => {
       {
         level: "warn",
         msg: "config file cannot be examined",
-        data: { file, error: "Error: EACCES: permission denied" },
+        data: { file, problem: "cannot examine the file: Error: EACCES: permission denied" },
       },
     ]);
   });

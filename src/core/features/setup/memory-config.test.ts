@@ -28,7 +28,7 @@ describe("memory_config", () => {
     expect(config.current().preset).toBe("rich");
     expect(reply).toBe(
       [
-        "Settings saved. Now in effect:",
+        "Settings saved. Caps, compaction save and toasts apply now; index size, index exit and subagents from the next session.",
         "preset: rich",
         "caps in tokens: user 800, org 1200, product 600, repo 1200",
         "index lines: 80",

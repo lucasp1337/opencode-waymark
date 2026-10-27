@@ -5,8 +5,8 @@ import { parseConfig, parseConfigValue } from "./config-file";
 import { type ConfigFile, mergeConfig, type Settings, settingsFrom } from "./settings";
 
 export interface ConfigStore {
-  // Re-reads the file only when its mtime changed. A missing, invalid or unreadable file gives the
-  // defaults.
+  // Re-reads the file only when its mtime changed. A missing, invalid or unreadable file, or one
+  // that cannot even be examined, gives the defaults.
   current(): Settings;
   // True for any file at the path, readable or not.
   exists(): boolean;
@@ -15,14 +15,24 @@ export interface ConfigStore {
 }
 
 interface Snapshot {
-  readonly mtimeMs: number | undefined;
+  // What was looked at: the file's mtime, its absence, or a failed look.
+  readonly version: string;
   // What the file says, or why it cannot be used.
   readonly content: Result<ConfigFile, string[]>;
   readonly settings: Settings;
 }
 
-function snapshotOf(mtimeMs: number | undefined, content: Result<ConfigFile, string[]>): Snapshot {
-  return { mtimeMs, content, settings: settingsFrom(content.ok ? content.value : {}) };
+function snapshotOf(version: string, content: Result<ConfigFile, string[]>): Snapshot {
+  return { version, content, settings: settingsFrom(content.ok ? content.value : {}) };
+}
+
+type Stat = Result<number | undefined, string>;
+
+function versionOf(stat: Stat): string {
+  if (!stat.ok) {
+    return "unexaminable";
+  }
+  return stat.value === undefined ? "missing" : `mtime ${stat.value}`;
 }
 
 export function openConfigStore(fs: FileSystem, file: string, log: HostPort["log"]): ConfigStore {
@@ -37,31 +47,40 @@ export function openConfigStore(fs: FileSystem, file: string, log: HostPort["log
     }
   }
 
+  function stat(): Stat {
+    try {
+      return ok(fs.mtimeMs(file));
+    } catch (error) {
+      return err(`cannot examine the file: ${String(error)}`);
+    }
+  }
+
   function fresh(): Snapshot {
-    const mtimeMs = fs.mtimeMs(file);
-    if (snapshot !== undefined && snapshot.mtimeMs === mtimeMs) {
+    const looked = stat();
+    const version = versionOf(looked);
+    if (snapshot?.version === version) {
       return snapshot;
     }
     // The mtime is read before the text, so a write in between is picked up on the next call.
-    const content = readContent();
+    const content = looked.ok ? readContent() : err([looked.error]);
     if (!content.ok) {
       log("warn", "config file unusable; using defaults", { file, problems: content.error });
     }
-    snapshot = snapshotOf(mtimeMs, content);
+    snapshot = snapshotOf(version, content);
     return snapshot;
   }
 
   return {
     current: () => fresh().settings,
     exists() {
-      try {
-        return fs.mtimeMs(file) !== undefined;
-      } catch (error) {
-        // Not being able to look is no evidence that the file is missing, and the only caller
-        // uses a "no file" answer to suggest setup.
-        log("warn", "config file cannot be examined", { file, error: String(error) });
-        return true;
+      const looked = stat();
+      if (looked.ok) {
+        return looked.value !== undefined;
       }
+      // Not being able to look is no evidence that the file is missing, and the only caller uses
+      // a "no file" answer to suggest setup.
+      log("warn", "config file cannot be examined", { file, problem: looked.error });
+      return true;
     },
     update(patch) {
       const { content } = fresh();
@@ -77,7 +96,7 @@ export function openConfigStore(fs: FileSystem, file: string, log: HostPort["log
       }
       // A hand-edited file loses its comments: the file is rewritten from the parsed content.
       fs.writeAtomic(file, `${JSON.stringify(merged.value, null, 2)}\n`);
-      snapshot = snapshotOf(fs.mtimeMs(file), merged);
+      snapshot = snapshotOf(versionOf(stat()), merged);
       return ok(snapshot.settings);
     },
   };
