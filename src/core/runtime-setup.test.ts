@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { SESSION, useRuntime } from "../../test/runtime-fixture";
+import { FIRST_ID, type RuntimeFixture, SESSION, useRuntime } from "../../test/runtime-fixture";
 import { INSTRUCTIONS } from "./features/recall/instructions";
+import { PRESETS } from "./features/recall/presets";
+import { DAY_MS } from "./telemetry/telemetry";
 
 const runtime = useRuntime();
 
@@ -15,9 +17,11 @@ function rule(title: string, body: string) {
   };
 }
 
-// Balanced gives the repo 600 tokens; this rule alone takes about 510 of them.
-const bigRule = rule("Release checklist", "Check the release notes. ".repeat(80));
-const nextRule = rule("Pin tool versions", "Pin every build tool to an exact version. ".repeat(10));
+// A token is four characters; the first rule takes most of Balanced's repo cap, the second the rest
+// and more.
+const REPO_CAP_CHARS = PRESETS.balanced.caps.repo * 4;
+const bigRule = rule("Release checklist", "x".repeat(REPO_CAP_CHARS * 0.8));
+const nextRule = rule("Pin tool versions", "y".repeat(REPO_CAP_CHARS * 0.3));
 
 const SETUP_TOAST = "waymark on (Balanced) · /memory setup to customize";
 
@@ -106,5 +110,40 @@ describe("plugin option and setting together", () => {
     const [block] = await fx.host.emitSystem("ses_sub");
 
     expect(block).toBe(INSTRUCTIONS);
+  });
+});
+
+const fact = { kind: "fact", scope: "repo", body: "Details.", relation: "new" };
+
+function newSession(fx: RuntimeFixture, id: string): Promise<string[]> {
+  fx.host.sessions.set(id, { id, directory: "/work/api" });
+  return fx.host.emitSystem(id);
+}
+
+describe("index settings", () => {
+  test("an index size set with memory_config applies to the next session", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", { ...fact, title: "Older fact" }, SESSION);
+    fx.clock.advance(DAY_MS);
+    await fx.host.callTool("memory_save", { ...fact, title: "Newer fact" }, SESSION);
+
+    await fx.host.callTool("memory_config", { indexLines: 1 }, SESSION);
+    const [block = ""] = await newSession(fx, "ses_next");
+
+    expect(block).toContain("Newer fact");
+    expect(block).not.toContain("Older fact");
+  });
+
+  test("index exit thresholds set with memory_config apply to the next session", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", { ...fact, title: "Idle fact" }, SESSION);
+    await fx.host.callTool("memory_config", { indexExitSessions: 1, indexExitDays: 1 }, SESSION);
+    await newSession(fx, "ses_1");
+    fx.clock.advance(DAY_MS);
+
+    const [block = ""] = await newSession(fx, "ses_2");
+
+    expect(block).toStartWith(INSTRUCTIONS);
+    expect(block).not.toContain(`[${FIRST_ID}] Idle fact`);
   });
 });

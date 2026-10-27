@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { FIRST_ID, type RuntimeFixture, SESSION, useRuntime } from "../../test/runtime-fixture";
 import { DAY_MS } from "./telemetry/telemetry";
 
@@ -58,5 +60,78 @@ describe("commands", () => {
     const review = await fx.host.callTool("memory_command", { args: "review" }, SESSION);
 
     expect(review).toStartWith("Nothing needs review");
+  });
+});
+
+const gotcha = {
+  kind: "gotcha",
+  scope: "repo",
+  title: "Deploys need the VPN",
+  body: "Connect the VPN first.",
+  triggers: { commands: ["make deploy"] },
+};
+
+// The gotcha fires once in each of `count` fresh sessions.
+async function deployInSessions(fx: RuntimeFixture, count: number): Promise<void> {
+  for (let n = 1; n <= count; n += 1) {
+    const id = `ses_deploy_${n}`;
+    fx.host.sessions.set(id, { id, directory: "/work/api" });
+    await fx.host.emitToolAfter({
+      sessionID: id,
+      tool: "bash",
+      args: { command: "make deploy" },
+      touchedPaths: [],
+      command: "make deploy",
+      appendable: true,
+    });
+  }
+}
+
+describe("commands through the runtime", () => {
+  test("/memory review lists a gotcha that fires often", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", gotcha, SESSION);
+    await deployInSessions(fx, 10);
+
+    const review = await fx.host.callTool("memory_command", { args: "review" }, SESSION);
+
+    expect(review).toContain(
+      `Gotchas that fire often:\n- [${FIRST_ID}] gotcha · repo:github.com/acme/api · Deploys need the VPN`,
+    );
+  });
+
+  test("/memory move moves a memory to another scope of the session", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", fact, SESSION);
+
+    const reply = await fx.host.callTool(
+      "memory_command",
+      { args: `move ${FIRST_ID} user` },
+      SESSION,
+    );
+
+    expect(reply).toBe(`Moved [${FIRST_ID}] fact · user · Staging resets nightly`);
+    expect(existsSync(join(fx.dataDir, "user", "fact", `${FIRST_ID}.md`))).toBe(true);
+  });
+
+  test("/memory org merge records the alias in the runtime's org registry", async () => {
+    const fx = runtime();
+    const registryFile = join(fx.dataDir, "registry.json");
+    const orgs = {
+      "github.com/acme": { owner: "acme" },
+      "github.com/acme-labs": { owner: "acme-labs" },
+    };
+    writeFileSync(registryFile, JSON.stringify({ orgs }));
+
+    const reply = await fx.host.callTool(
+      "memory_command",
+      { args: "org merge github.com/acme github.com/acme-labs" },
+      SESSION,
+    );
+
+    expect(reply).toStartWith("Merged org github.com/acme-labs into github.com/acme");
+    expect(JSON.parse(readFileSync(registryFile, "utf8"))).toMatchObject({
+      aliases: { "github.com/acme-labs": "github.com/acme" },
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { type ConfigStore, openConfigStore } from "./config/config-store";
-import { memoryCommandTool } from "./features/commands/memory-command";
+import { type MemoryCommandDeps, memoryCommandTool } from "./features/commands/memory-command";
 import { commandTemplates } from "./features/commands/templates";
 import { guardedTool } from "./features/guarded-tool";
 import { compactionNote } from "./features/lifecycle/compaction";
@@ -86,19 +86,22 @@ interface Wiring extends Resources {
   readonly registryFile: string;
 }
 
-function registerTools(wiring: Wiring): void {
-  const { host, deps, store, vectors, embedder, counters, config, scopes } = wiring;
-  // Read per save, so a cap raised with memory_config applies at once.
-  const caps = () => config.current().caps;
-  const toolDeps: ToolDeps = {
+function toolDepsOf(wiring: Wiring): ToolDeps {
+  const { host, deps, store, vectors, embedder, config, scopes } = wiring;
+  return {
     host,
     store,
     scopes,
     now: deps.now,
     newId: deps.newId,
-    caps,
+    // Read per save, so a cap raised with memory_config applies at once.
+    caps: () => config.current().caps,
     retriever: createRetriever({ store, vectors, embedder, log: host.log }),
   };
+}
+
+function commandToolDeps(wiring: Wiring, toolDeps: ToolDeps): MemoryCommandDeps {
+  const { deps, store, counters, config, registryFile } = wiring;
   const reviewSignals = createReviewSignals({
     store,
     counters,
@@ -106,6 +109,12 @@ function registerTools(wiring: Wiring): void {
     indexExit: () => config.current().indexExit,
     noisy: DEFAULT_LIFECYCLE.noisy,
   });
+  return { ...toolDeps, fs: deps.fs, registryFile, reviewSignals };
+}
+
+function registerTools(wiring: Wiring): void {
+  const { host, store, counters, config } = wiring;
+  const toolDeps = toolDepsOf(wiring);
   const tools = [
     memorySaveTool(toolDeps),
     memoryUpdateTool(toolDeps),
@@ -113,16 +122,14 @@ function registerTools(wiring: Wiring): void {
     memorySearchTool(toolDeps),
     memoryForgetTool(toolDeps),
     memoryConfigTool({ config }),
-    memoryCommandTool({
-      ...toolDeps,
-      fs: deps.fs,
-      registryFile: wiring.registryFile,
-      reviewSignals,
-    }),
+    memoryCommandTool(commandToolDeps(wiring, toolDeps)),
   ];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool));
   }
+}
+
+function registerCommands(host: HostPort): void {
   for (const command of commandTemplates(SETUP_INSTRUCTIONS)) {
     host.registerCommand(command.name, command.description, command.template);
   }
@@ -213,6 +220,7 @@ function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void 
   const scopes = createSessionScopes({ host, git: deps.git, fs: deps.fs, registryFile });
   const wiring = { host, deps, ...resources, config, scopes, registryFile };
   registerTools(wiring);
+  registerCommands(host);
   registerRecall(wiring);
 }
 

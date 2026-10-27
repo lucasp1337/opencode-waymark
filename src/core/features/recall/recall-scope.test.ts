@@ -62,6 +62,25 @@ describe("createRecallScopes", () => {
     expect(await recall.recallScope("ses_b")).toBeNull();
   });
 
+  test("the subagent list is read when a session is first seen", async () => {
+    const host = createFakeHost();
+    for (const id of ["ses_early", "ses_late"]) {
+      host.sessions.set(id, { id, parentID: "ses_a", agent: "reviewer", directory: "/work/api" });
+    }
+    let subagents: readonly string[] = [];
+    const recall = createRecallScopes({
+      host,
+      scopes: countingScopes(),
+      subagents: () => subagents,
+    });
+
+    await recall.recallScope("ses_early");
+    subagents = ["reviewer"];
+
+    expect(await recall.recallScope("ses_early")).toBeNull();
+    expect(await recall.recallScope("ses_late")).toEqual({ chain: CHAIN, directory: "/work/api" });
+  });
+
   test("a failed lookup is retried on the next call", async () => {
     const host = createFakeHost();
     const recall = createRecallScopes({ host, scopes: countingScopes(), subagents: () => [] });
