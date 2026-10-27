@@ -44,7 +44,7 @@ describe("createRecallScopes", () => {
     const host = createFakeHost();
     host.sessions.set("ses_a", { id: "ses_a", directory: "/work/api" });
     const scopes = countingScopes();
-    const recall = createRecallScopes({ host, scopes, subagents: [] });
+    const recall = createRecallScopes({ host, scopes, subagents: () => [] });
 
     const first = await recall.recallScope("ses_a");
     await recall.recallScope("ses_a");
@@ -57,14 +57,14 @@ describe("createRecallScopes", () => {
     const host = createFakeHost();
     host.sessions.set("ses_b", { id: "ses_b", parentID: "ses_a", directory: "/work/api" });
 
-    const recall = createRecallScopes({ host, scopes: countingScopes(), subagents: [] });
+    const recall = createRecallScopes({ host, scopes: countingScopes(), subagents: () => [] });
 
     expect(await recall.recallScope("ses_b")).toBeNull();
   });
 
   test("a failed lookup is retried on the next call", async () => {
     const host = createFakeHost();
-    const recall = createRecallScopes({ host, scopes: countingScopes(), subagents: [] });
+    const recall = createRecallScopes({ host, scopes: countingScopes(), subagents: () => [] });
 
     await expect(recall.recallScope("ses_late")).rejects.toThrow("unknown session");
     host.sessions.set("ses_late", { id: "ses_late", directory: "/work/api" });

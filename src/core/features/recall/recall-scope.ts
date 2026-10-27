@@ -7,7 +7,8 @@ export interface RecallScope {
   readonly directory: string;
 }
 
-// Subagent sessions get nothing unless the user listed their agent in the `subagents` option.
+// Subagent sessions get nothing unless the user listed their agent in the `subagents` option or
+// setting.
 export function receivesRecall(meta: SessionMeta, subagents: readonly string[]): boolean {
   return (
     meta.parentID === undefined || (meta.agent !== undefined && subagents.includes(meta.agent))
@@ -17,12 +18,13 @@ export function receivesRecall(meta: SessionMeta, subagents: readonly string[]):
 interface RecallScopeDeps {
   readonly host: Pick<HostPort, "sessionMeta">;
   readonly scopes: SessionScopes;
-  readonly subagents: readonly string[];
+  // Read when a session is first seen, so a changed setting applies to the next session.
+  readonly subagents: () => readonly string[];
 }
 
 async function resolve(deps: RecallScopeDeps, sessionID: string): Promise<RecallScope | null> {
   const meta = await deps.host.sessionMeta(sessionID);
-  if (!receivesRecall(meta, deps.subagents)) {
+  if (!receivesRecall(meta, deps.subagents())) {
     return null;
   }
   return { chain: await deps.scopes.chainFor(sessionID), directory: meta.directory };

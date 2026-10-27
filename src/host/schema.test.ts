@@ -91,6 +91,16 @@ describe("Waymark's tool schemas", () => {
       ["id"],
       ["query", "kinds", "scopes"],
       ["id"],
+      [
+        "preset",
+        "caps",
+        "indexLines",
+        "indexExitSessions",
+        "indexExitDays",
+        "subagents",
+        "compactionSave",
+        "toasts",
+      ],
     ]);
   });
 });

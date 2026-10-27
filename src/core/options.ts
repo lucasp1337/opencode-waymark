@@ -1,3 +1,4 @@
+import { isAgentNameList } from "./config/agent-names";
 import { ownField } from "./model/own-field";
 
 interface WaymarkOptions {
@@ -16,11 +17,8 @@ export function parseOptions(raw: unknown): ParsedOptions {
   if (subagents === undefined) {
     return { options: { subagents: [] }, problems: [] };
   }
-  const names = Array.isArray(subagents)
-    ? subagents.filter((name): name is string => typeof name === "string" && name !== "")
-    : [];
-  if (Array.isArray(subagents) && names.length === subagents.length) {
-    return { options: { subagents: names }, problems: [] };
+  if (isAgentNameList(subagents)) {
+    return { options: { subagents }, problems: [] };
   }
   return {
     options: { subagents: [] },

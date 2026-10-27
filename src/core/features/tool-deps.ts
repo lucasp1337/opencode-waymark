@@ -12,6 +12,7 @@ export interface ToolDeps {
   readonly scopes: SessionScopes;
   readonly now: () => Date;
   readonly newId: () => MemoryId;
-  readonly caps: BudgetCaps;
+  // Read per save, so a changed setting applies without a restart.
+  readonly caps: () => BudgetCaps;
   readonly retriever: Retriever;
 }

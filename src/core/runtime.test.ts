@@ -174,7 +174,14 @@ describe("dispose with a loaded embedding model", () => {
   });
 });
 
-const TOOLS = ["memory_save", "memory_update", "memory_read", "memory_search", "memory_forget"];
+const TOOLS = [
+  "memory_save",
+  "memory_update",
+  "memory_read",
+  "memory_search",
+  "memory_forget",
+  "memory_config",
+];
 
 const tempDir = useTempDirs();
 

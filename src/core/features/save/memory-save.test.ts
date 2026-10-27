@@ -292,7 +292,7 @@ describe("memory_save budget", () => {
     const reply = await save(fx, rule("Another rule", "y".repeat(400)));
 
     expect(reply).toStartWith(
-      "Not saved: rule and preference memories in repo:github.com/acme/api are capped at 600 tokens; 506 are used and this one needs 107.",
+      "Not saved: rule and preference memories in repo:github.com/acme/api are capped at 600 tokens; 506 are used and the memory needs 107.",
     );
     expect(reply).toContain(
       "- [01JB8Z6Q4R3M2N1P0V9W8X0001] rule · repo:github.com/acme/api · Long rule (506 tokens)",
@@ -300,6 +300,17 @@ describe("memory_save budget", () => {
     expect(
       existsSync(join(fx.dataDir, "repos/github.com/acme/api/rule/01JB8Z6Q4R3M2N1P0V9W8X0002.md")),
     ).toBe(false);
+  });
+
+  test("tells the agent to offer merging, demoting or raising the cap with memory_config", async () => {
+    const fx = fixture();
+    await save(fx, rule("Long rule", "x".repeat(2000)));
+
+    const reply = await save(fx, rule("Another rule", "y".repeat(400)));
+
+    expect(reply).toContain(
+      "Offer the user one of: merge these memories, demote one to a fact, or raise the cap with memory_config (caps: { repo: <tokens> }).",
+    );
   });
 
   test("the user scope is capped at 400 tokens", async () => {

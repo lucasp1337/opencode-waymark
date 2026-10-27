@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { type ConfigStore, openConfigStore } from "./config/config-store";
 import { guardedTool } from "./features/guarded-tool";
 import { DEFAULT_LIFECYCLE } from "./features/lifecycle/lifecycle-settings";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
@@ -6,12 +7,14 @@ import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddi
 import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
 import { memorySearchTool } from "./features/recall/memory-search";
-import { PRESETS } from "./features/recall/presets";
-import { createRecallScopes } from "./features/recall/recall-scope";
+import { createRecallScopes, type RecallScope } from "./features/recall/recall-scope";
 import { createRetriever } from "./features/recall/retriever";
 import { createSessionBlocks } from "./features/recall/session-blocks";
 import { memorySaveTool } from "./features/save/memory-save";
 import { memoryUpdateTool } from "./features/save/memory-update";
+import { createFirstSessionNotice } from "./features/setup/first-session";
+import { memoryConfigTool } from "./features/setup/memory-config";
+import { withToastSetting } from "./features/setup/toast-setting";
 import type { ToolDeps } from "./features/tool-deps";
 import type { MemoryId } from "./model/id";
 import { parseOptions } from "./options";
@@ -41,9 +44,6 @@ export interface RuntimeDeps {
 export interface Runtime {
   dispose(): void;
 }
-
-// The preset becomes configurable with /memory setup; until then everyone gets Balanced.
-const PRESET = PRESETS.balanced;
 
 function openCounters(host: HostPort, deps: RuntimeDeps): Telemetry {
   const { telemetry, reset } = openTelemetry(join(deps.dataDir, "telemetry.sqlite"), deps.now, {
@@ -76,17 +76,21 @@ interface Resources {
 interface Wiring extends Resources {
   readonly host: HostPort;
   readonly deps: RuntimeDeps;
+  readonly config: ConfigStore;
   readonly scopes: SessionScopes;
 }
 
-function registerTools({ host, deps, store, vectors, embedder, counters, scopes }: Wiring): void {
+function registerTools(wiring: Wiring): void {
+  const { host, deps, store, vectors, embedder, counters, config, scopes } = wiring;
+  // Read per save, so a cap raised with memory_config applies at once.
+  const caps = () => config.current().caps;
   const toolDeps: ToolDeps = {
     host,
     store,
     scopes,
     now: deps.now,
     newId: deps.newId,
-    caps: PRESET.caps,
+    caps,
     retriever: createRetriever({ store, vectors, embedder, log: host.log }),
   };
   const tools = [
@@ -95,40 +99,69 @@ function registerTools({ host, deps, store, vectors, embedder, counters, scopes 
     memoryReadTool({ store, counters }),
     memorySearchTool(toolDeps),
     memoryForgetTool(toolDeps),
+    memoryConfigTool({ config }),
   ];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool));
   }
 }
 
-// Recall reaches the agent through the system prompt and tool outputs; a host lacking either
-// degrades to the rest.
-function registerRecall({ host, deps, store, counters, scopes }: Wiring): void {
+type RecallScopeOf = (sessionID: string) => Promise<RecallScope | null>;
+
+interface Forgetter {
+  forget(sessionID: string): void;
+}
+
+// Subagents opted in through the plugin option or the setting both receive recall.
+function subagentsOf({ host, deps, config }: Wiring): () => readonly string[] {
   const { options, problems } = parseOptions(deps.options);
   for (const problem of problems) {
     host.log("warn", "plugin option ignored", { problem });
   }
-  const recall = createRecallScopes({ host, scopes, subagents: options.subagents });
+  return () => [...options.subagents, ...config.current().subagents];
+}
+
+function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf): Forgetter {
+  const { host, deps, store, counters, config } = wiring;
+  const blocks = createSessionBlocks({
+    store,
+    recallScope,
+    indexLines: () => config.current().indexLines,
+    indexExit: () => config.current().indexExit,
+    counters,
+    now: deps.now,
+    log: host.log,
+  });
+  const firstSession = createFirstSessionNotice({ host, config });
+  host.onSystem(async (sessionID) => {
+    const block = await blocks.blockFor(sessionID);
+    if (block !== null) {
+      await firstSession();
+    }
+    return block;
+  });
+  return blocks;
+}
+
+function registerJit({ host, store, counters }: Wiring, recallScope: RecallScopeOf): Forgetter {
+  const jit = createJit({ recallScope, store, counters, noisy: DEFAULT_LIFECYCLE.noisy });
+  host.onUserMessage((sessionID, text) => jit.onUserMessage(sessionID, text));
+  host.onToolAfter((call) => jit.onToolAfter(call));
+  return jit;
+}
+
+// Recall reaches the agent through the system prompt and tool outputs; a host lacking either
+// degrades to the rest.
+function registerRecall(wiring: Wiring): void {
+  const { host, scopes } = wiring;
+  const recall = createRecallScopes({ host, scopes, subagents: subagentsOf(wiring) });
   const recallScope = (sessionID: string) => recall.recallScope(sessionID);
-  const forgetters: Array<{ forget(sessionID: string): void }> = [recall];
+  const forgetters: Forgetter[] = [recall];
   if (host.capabilities.systemInjection) {
-    const blocks = createSessionBlocks({
-      store,
-      recallScope,
-      indexLines: () => PRESET.indexLines,
-      indexExit: () => DEFAULT_LIFECYCLE.indexExit,
-      counters,
-      now: deps.now,
-      log: host.log,
-    });
-    host.onSystem((sessionID) => blocks.blockFor(sessionID));
-    forgetters.push(blocks);
+    forgetters.push(registerSessionBlocks(wiring, recallScope));
   }
   if (host.capabilities.toolOutputMutation) {
-    const jit = createJit({ recallScope, store, counters, noisy: DEFAULT_LIFECYCLE.noisy });
-    host.onUserMessage((sessionID, text) => jit.onUserMessage(sessionID, text));
-    host.onToolAfter((call) => jit.onToolAfter(call));
-    forgetters.push(jit);
+    forgetters.push(registerJit(wiring, recallScope));
   }
   // Per-session state would otherwise grow for as long as opencode runs.
   host.onSessionEvent((event) => {
@@ -141,14 +174,12 @@ function registerRecall({ host, deps, store, counters, scopes }: Wiring): void {
   });
 }
 
-function wire(host: HostPort, deps: RuntimeDeps, resources: Resources): void {
-  const scopes = createSessionScopes({
-    host,
-    git: deps.git,
-    fs: deps.fs,
-    registryFile: join(deps.dataDir, "registry.json"),
-  });
-  const wiring = { host, deps, ...resources, scopes };
+function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void {
+  const config = openConfigStore(deps.fs, join(deps.dataDir, "config.jsonc"), rawHost.log);
+  const host = withToastSetting(rawHost, () => config.current().toasts);
+  const registryFile = join(deps.dataDir, "registry.json");
+  const scopes = createSessionScopes({ host, git: deps.git, fs: deps.fs, registryFile });
+  const wiring = { host, deps, ...resources, config, scopes };
   registerTools(wiring);
   registerRecall(wiring);
 }
