@@ -1,8 +1,9 @@
 import { join } from "node:path";
 import { guardedTool } from "./features/guarded-tool";
+import { memoryReadTool } from "./features/recall/memory-read";
 import type { ToolDeps } from "./features/tool-deps";
 import type { MemoryId } from "./model/id";
-import type { HostPort, ToolDef } from "./port";
+import type { HostPort } from "./port";
 import type { Git } from "./scope/git";
 import { createSessionScopes } from "./scope/session-scopes";
 import type { SyncReport } from "./store/cache";
@@ -43,7 +44,7 @@ function registerTools(host: HostPort, deps: RuntimeDeps, store: MemoryStore): v
     store,
     scopes,
   };
-  const tools: Array<(deps: ToolDeps) => ToolDef> = [];
+  const tools = [memoryReadTool];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool(toolDeps)));
   }
