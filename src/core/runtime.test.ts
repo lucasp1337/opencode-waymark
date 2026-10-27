@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fakeEmbedder } from "../../test/fake-embedder";
 import { createFakeHost } from "../../test/fake-host";
@@ -13,7 +13,7 @@ import {
 import { useTempDirs } from "../../test/temp-dir";
 import { validContent } from "../../test/valid-content";
 import { newMemory } from "./model/memory";
-import { activate } from "./runtime";
+import { activate, type RuntimeDeps } from "./runtime";
 import { processGit } from "./scope/git";
 import { nodeFileSystem } from "./store/fs";
 import { createMemoryFiles } from "./store/memory-files";
@@ -104,6 +104,16 @@ describe("createRuntime", () => {
     expect(next.host.logs.map((entry) => entry.msg)).toContain("vector cache recreated");
   });
 
+  test("an unusable telemetry file is recreated and logged", () => {
+    const fx = runtime();
+    fx.runtime.dispose();
+    writeFileSync(join(fx.dataDir, "telemetry.sqlite"), "not a database ".repeat(40));
+
+    const next = fx.restart();
+
+    expect(next.host.logs.map((entry) => entry.msg)).toContain("telemetry recreated");
+  });
+
   test("an invalid memory file is skipped and logged", () => {
     const fx = runtime();
     mkdirSync(join(fx.dataDir, "user", "fact"), { recursive: true });
@@ -121,6 +131,21 @@ describe("createRuntime", () => {
     fx.runtime.dispose();
 
     expect(fx.host.logs.filter((entry) => entry.msg === "runtime disposed")).toHaveLength(1);
+  });
+});
+
+// SQLite deletes the write-ahead log when the last connection to the file closes, so its presence
+// shows that a connection is still open.
+describe("dispose and the telemetry file", () => {
+  test("closes the telemetry connection", () => {
+    const fx = runtime();
+    const log = join(fx.dataDir, "telemetry.sqlite-wal");
+    const openBefore = existsSync(log);
+
+    fx.runtime.dispose();
+
+    expect(openBefore).toBe(true);
+    expect(existsSync(log)).toBe(false);
   });
 });
 
@@ -153,24 +178,44 @@ const TOOLS = ["memory_save", "memory_update", "memory_read", "memory_search", "
 
 const tempDir = useTempDirs();
 
+function depsIn(dataDir: string): RuntimeDeps {
+  return {
+    dataDir,
+    fs: nodeFileSystem,
+    git: processGit,
+    now: () => new Date(0),
+    newId: () => memoryId(ID),
+    loadEmbedder: () => Promise.reject(new Error("no model in this test")),
+    options: undefined,
+  };
+}
+
 describe("activate", () => {
   test("a failed start is logged and leaves an inert runtime with no tools", () => {
     const host = createFakeHost();
     const blocked = join(tempDir(), "file");
     writeFileSync(blocked, "a file where the data dir should be");
 
-    const started = activate(host, {
-      dataDir: join(blocked, "waymark"),
-      fs: nodeFileSystem,
-      git: processGit,
-      now: () => new Date(0),
-      newId: () => memoryId(ID),
-      loadEmbedder: () => Promise.reject(new Error("no model in this test")),
-      options: undefined,
-    });
+    const started = activate(host, depsIn(join(blocked, "waymark")));
 
     expect(host.logs.map((entry) => entry.msg)).toEqual(["activation failed"]);
     expect(host.tools.size).toBe(0);
     expect(() => started.dispose()).not.toThrow();
+  });
+
+  test("a start that fails after the telemetry file was opened closes it again", () => {
+    const dataDir = tempDir();
+    const host = {
+      ...createFakeHost(),
+      registerTool: () => {
+        throw new Error("host refused the tool");
+      },
+    };
+
+    activate(host, depsIn(dataDir));
+
+    expect(host.logs.map((entry) => entry.msg)).toContain("activation failed");
+    expect(existsSync(join(dataDir, "telemetry.sqlite"))).toBe(true);
+    expect(existsSync(join(dataDir, "telemetry.sqlite-wal"))).toBe(false);
   });
 });

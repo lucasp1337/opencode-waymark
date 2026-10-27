@@ -1,4 +1,6 @@
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { memoryId } from "../../../../test/memory-id";
 import {
   FIRST_ID as ID,
@@ -63,5 +65,17 @@ describe("memory_read", () => {
     expect(await read(fx, "abc")).toBe(
       'id must be a memory id like 01JB8Z6Q4R3M2N1P0V9W8X7Y6Z, got "abc"',
     );
+  });
+});
+
+describe("memory_read counters", () => {
+  test("still returns the memory when the counters are broken", async () => {
+    const fx = withStoredFact();
+    const db = new Database(join(fx.dataDir, "telemetry.sqlite"));
+    db.exec("DROP TABLE counters");
+    db.close();
+
+    expect(await read(fx, ID)).toContain("title: Staging resets nightly");
+    expect(fx.host.logs.some((entry) => entry.msg === "telemetry failed")).toBe(true);
   });
 });

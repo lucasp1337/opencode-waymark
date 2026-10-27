@@ -1,13 +1,20 @@
+import { isIndexed } from "../../model/kind";
 import { activeOnly } from "../../model/memory";
 import type { HostPort } from "../../port";
 import type { MemoryStore } from "../../store/memory-store";
+import type { Telemetry } from "../../telemetry/telemetry";
+import type { IndexExitThresholds } from "../lifecycle/lifecycle-settings";
 import type { RecallScope } from "./recall-scope";
 import { renderSessionBlock } from "./session-block";
 
 interface SessionBlockDeps {
   readonly store: Pick<MemoryStore, "inScopes">;
   readonly recallScope: (sessionID: string) => Promise<RecallScope | null>;
-  readonly indexLines: number;
+  // Read per rendering, so a changed setting applies to the next session without a restart.
+  readonly indexLines: () => number;
+  readonly indexExit: () => IndexExitThresholds;
+  readonly counters: Pick<Telemetry, "stats" | "recordSessions">;
+  readonly now: () => Date;
   readonly log: HostPort["log"];
 }
 
@@ -18,7 +25,17 @@ async function render(deps: SessionBlockDeps, sessionID: string): Promise<string
     return null;
   }
   const memories = activeOnly(deps.store.inScopes(scope.chain));
-  const block = renderSessionBlock({ chain: scope.chain, memories, indexLines: deps.indexLines });
+  const indexed = memories.filter((memory) => isIndexed(memory.kind)).map((memory) => memory.id);
+  const usage = { stats: deps.counters.stats(indexed), now: deps.now(), exit: deps.indexExit() };
+  const block = renderSessionBlock({
+    chain: scope.chain,
+    memories,
+    indexLines: deps.indexLines(),
+    usage,
+  });
+  // Counted after the decision, so the session that reaches the threshold still shows the memory.
+  // This write happens once per session, never per request.
+  deps.counters.recordSessions(indexed);
   // The evidence for "this session saw that rule".
   deps.log("info", "session block rendered", { sessionID, memories: block.shown });
   return block.text;

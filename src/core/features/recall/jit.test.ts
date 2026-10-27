@@ -5,6 +5,8 @@ import type { MemoryId } from "../../model/id";
 import { type Memory, type MemoryContent, newMemory, type Triggers } from "../../model/memory";
 import { type ScopeChain, type ScopeRef, scopeKey } from "../../model/scope";
 import type { ToolCallInfo } from "../../port";
+import type { Telemetry } from "../../telemetry/telemetry";
+import type { NoisyThresholds } from "../lifecycle/lifecycle-settings";
 import { createJit } from "./jit";
 import type { RecallScope } from "./recall-scope";
 
@@ -40,15 +42,38 @@ function onChain(memories: readonly Memory[], chain: ScopeChain): Memory[] {
   return memories.filter((memory) => keys.has(scopeKey(memory.scope)));
 }
 
+const NOISY: NoisyThresholds = { fires: 10, days: 30 };
+
+// Counters whose fires before a delivery are fixed by the test; they remember what was asked and
+// recorded.
+function fakeCounters(firesBefore = 0) {
+  const fired: MemoryId[] = [];
+  const asked: Array<{ id: MemoryId; days: number }> = [];
+  const counters: Pick<Telemetry, "recordFire" | "firesWithin"> = {
+    recordFire: (fireId) => {
+      fired.push(fireId);
+    },
+    firesWithin: (fireId, days) => {
+      asked.push({ id: fireId, days });
+      return firesBefore;
+    },
+  };
+  return { counters, fired, asked };
+}
+
 interface Setup {
   scope?: RecallScope | null;
+  firesBefore?: number;
 }
 
 function jitWith(memories: readonly Memory[], setup: Setup = {}) {
   const reads = { count: 0 };
   const store = { generation: 0 };
   const scope = setup.scope === undefined ? SESSION_SCOPE : setup.scope;
+  const { counters, fired, asked } = fakeCounters(setup.firesBefore);
   const jit = createJit({
+    counters,
+    noisy: NOISY,
     recallScope: () => Promise.resolve(scope),
     store: {
       inScopes: (chain) => {
@@ -58,7 +83,7 @@ function jitWith(memories: readonly Memory[], setup: Setup = {}) {
       generation: () => store.generation,
     },
   });
-  return { jit, reads, store };
+  return { jit, reads, store, fired, asked };
 }
 
 interface CallSpec {
@@ -338,6 +363,8 @@ describe("JIT for a session that gets no recall", () => {
     const jit = createJit({
       recallScope: () => Promise.resolve(scope),
       store: { inScopes: (chain) => onChain([ON_BASH], chain), generation: () => 0 },
+      counters: fakeCounters().counters,
+      noisy: NOISY,
     });
     await jit.onToolAfter(toolCall({ tool: "bash", appendable: false }));
     scope = SESSION_SCOPE;
@@ -376,5 +403,143 @@ describe("JIT forget", () => {
     jit.forget("s1");
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).not.toBeNull();
+  });
+});
+
+describe("JIT fire counting", () => {
+  test("records a fire for every memory it delivers", async () => {
+    const fact = stored(3, {
+      kind: "fact",
+      title: "Staging resets nightly",
+      body: "At 02:00.",
+      triggers: { tools: ["bash"] },
+    });
+    const { jit, fired } = jitWith([ON_BASH, fact]);
+
+    await jit.onToolAfter(toolCall({ tool: "bash" }));
+
+    expect(fired).toEqual([id(1), id(3)]);
+  });
+
+  test("records nothing for a match that is held back", async () => {
+    const { jit, fired } = jitWith([ON_BASH]);
+
+    await jit.onToolAfter(toolCall({ tool: "bash", appendable: false }));
+
+    expect(fired).toEqual([]);
+  });
+
+  test("records a held match when it is finally delivered", async () => {
+    const { jit, fired } = jitWith([ON_BASH]);
+    await jit.onToolAfter(toolCall({ tool: "bash", appendable: false }));
+
+    await jit.onToolAfter(toolCall({ tool: "read" }));
+
+    expect(fired).toEqual([id(1)]);
+  });
+
+  test("records nothing for a memory already delivered in the session", async () => {
+    const { jit, fired } = jitWith([ON_BASH]);
+    await jit.onToolAfter(toolCall({ tool: "bash" }));
+
+    await jit.onToolAfter(toolCall({ tool: "bash" }));
+
+    expect(fired).toEqual([id(1)]);
+  });
+
+  test("records a fire again for the same memory in another session", async () => {
+    const { jit, fired } = jitWith([ON_BASH]);
+
+    await jit.onToolAfter(toolCall({ session: "s1", tool: "bash" }));
+    await jit.onToolAfter(toolCall({ session: "s2", tool: "bash" }));
+
+    expect(fired).toEqual([id(1), id(1)]);
+  });
+});
+
+describe("JIT noisy gotcha check", () => {
+  const noisyLine = (fires: number, memoryId: MemoryId) =>
+    `waymark · this gotcha fired ${fires} times in 30 days. Ask the user whether to keep it, ` +
+    `forget it (memory_forget ${memoryId}), or turn it into a rule.`;
+
+  test("adds no line to a gotcha that fired fewer times than the threshold", async () => {
+    const { jit } = jitWith([ON_BASH], { firesBefore: 9 });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
+      "waymark · gotcha · Pushes are protected\nBody of Pushes are protected.",
+    );
+  });
+
+  test("adds the line to a gotcha that fired exactly as often as the threshold", async () => {
+    const { jit } = jitWith([ON_BASH], { firesBefore: 10 });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
+      `waymark · gotcha · Pushes are protected\nBody of Pushes are protected.\n${noisyLine(10, id(1))}`,
+    );
+  });
+
+  test("counts the fires of the threshold's window, not of all time", async () => {
+    const { jit, asked } = jitWith([ON_BASH]);
+
+    await jit.onToolAfter(toolCall({ tool: "bash" }));
+
+    expect(asked).toEqual([{ id: id(1), days: 30 }]);
+  });
+
+  test("asks about only one noisy gotcha per session", async () => {
+    const { jit } = jitWith([ON_BASH, ON_READ], { firesBefore: 12 });
+
+    const text = await jit.onToolAfter(toolCall({ tool: "bash" }));
+    const later = await jit.onToolAfter(toolCall({ tool: "read" }));
+
+    expect(text).toContain(noisyLine(12, id(1)));
+    expect(later).toBe("waymark · gotcha · Reads are slow\nBody of Reads are slow.");
+  });
+
+  test("puts the line on the first of two noisy gotchas delivered together", async () => {
+    const { jit } = jitWith([ON_BASH, gotcha(3, "Shell is slow", { tools: ["bash"] })], {
+      firesBefore: 10,
+    });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
+      `waymark · gotcha · Pushes are protected\nBody of Pushes are protected.\n${noisyLine(10, id(1))}` +
+        "\n\nwaymark · gotcha · Shell is slow\nBody of Shell is slow.",
+    );
+  });
+
+  test("asks again in the next session", async () => {
+    const { jit } = jitWith([ON_BASH], { firesBefore: 10 });
+    await jit.onToolAfter(toolCall({ session: "s1", tool: "bash" }));
+
+    expect(await jit.onToolAfter(toolCall({ session: "s2", tool: "bash" }))).toContain(
+      noisyLine(10, id(1)),
+    );
+  });
+
+  test("does not ask about a fact with triggers, however often it fired", async () => {
+    const fact = stored(3, {
+      kind: "fact",
+      title: "Staging resets nightly",
+      body: "At 02:00.",
+      triggers: { tools: ["bash"] },
+    });
+    const { jit } = jitWith([fact], { firesBefore: 50 });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
+      "waymark · fact · Staging resets nightly\nAt 02:00.",
+    );
+  });
+
+  test("a fact does not use up the session's one question", async () => {
+    const fact = stored(3, {
+      kind: "fact",
+      title: "Staging resets nightly",
+      body: "At 02:00.",
+      triggers: { tools: ["bash"] },
+    });
+    const { jit } = jitWith([fact, ON_READ], { firesBefore: 50 });
+    await jit.onToolAfter(toolCall({ tool: "bash" }));
+
+    expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toContain(noisyLine(50, id(2)));
   });
 });

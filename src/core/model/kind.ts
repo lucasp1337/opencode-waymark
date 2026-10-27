@@ -39,6 +39,10 @@ export function isAlwaysOn(kind: Kind): boolean {
   return KIND_DELIVERY[kind] === "always";
 }
 
+export function isIndexed(kind: Kind): boolean {
+  return KIND_DELIVERY[kind] === "index";
+}
+
 export function isKind(value: unknown): value is Kind {
   return KINDS.some((kind) => kind === value);
 }

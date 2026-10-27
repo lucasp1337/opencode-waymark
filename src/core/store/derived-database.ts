@@ -12,7 +12,9 @@ export class CacheCorruptError extends Error {
   }
 }
 
-// A SQLite file that is derived from other data and can always be deleted and rebuilt.
+// A SQLite file whose tables are dropped and created anew when the file is unusable or the schema
+// version changes. The caches are derived from other data and refill; the telemetry counters are
+// not, so for them a reset only loses the counts.
 export interface DerivedSchema {
   // Bump when the tables change; a different stored version drops `tables` and creates them anew.
   readonly version: number;

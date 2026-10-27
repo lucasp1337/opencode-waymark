@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { isAlwaysOn, isKind, KINDS, kindsRequiring } from "./kind";
+import { isAlwaysOn, isIndexed, isKind, KINDS, kindsRequiring } from "./kind";
 
 describe("isAlwaysOn", () => {
   test("is true for rules and preferences only", () => {
     expect(KINDS.filter(isAlwaysOn)).toEqual(["rule", "preference"]);
+  });
+});
+
+describe("isIndexed", () => {
+  test("is true for facts and decisions only", () => {
+    expect(KINDS.filter(isIndexed)).toEqual(["fact", "decision"]);
   });
 });
 

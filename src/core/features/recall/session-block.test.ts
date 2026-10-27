@@ -3,6 +3,7 @@ import { memoryId } from "../../../../test/memory-id";
 import { validContent } from "../../../../test/valid-content";
 import { type Memory, type MemoryContent, newMemory } from "../../model/memory";
 import type { ScopeChain, ScopeRef } from "../../model/scope";
+import type { IndexUsage } from "../lifecycle/index-exit";
 import { INSTRUCTIONS } from "./instructions";
 import { renderSessionBlock } from "./session-block";
 
@@ -24,8 +25,11 @@ function memory(content: MemoryContent, { n, scope, updated }: Fixture): Memory 
   });
 }
 
-function render(memories: Memory[], indexLines = 40): string {
-  return renderSessionBlock({ chain: CHAIN, memories, indexLines }).text;
+const NOW = new Date("2026-03-01T10:00:00.000Z");
+const NO_USAGE: IndexUsage = { stats: new Map(), now: NOW, exit: { sessions: 20, days: 30 } };
+
+function render(memories: Memory[], indexLines = 40, usage: IndexUsage = NO_USAGE): string {
+  return renderSessionBlock({ chain: CHAIN, memories, indexLines, usage }).text;
 }
 
 describe("renderSessionBlock", () => {
@@ -101,6 +105,56 @@ describe("renderSessionBlock", () => {
     expect(text).not.toContain("Old");
   });
 
+  test("lists the most recently read fact before the most recently updated one", () => {
+    const updatedLately = memory(
+      { kind: "fact", title: "Updated lately", body: "b" },
+      { n: 16, scope: USER, updated: "2026-02-20T00:00:00.000Z" },
+    );
+    const readLately = memory(
+      { kind: "fact", title: "Read lately", body: "b" },
+      { n: 17, scope: USER, updated: "2026-01-01T00:00:00.000Z" },
+    );
+    const usage: IndexUsage = {
+      ...NO_USAGE,
+      stats: new Map([
+        [
+          readLately.id,
+          {
+            reads: 1,
+            lastRead: new Date("2026-02-25T00:00:00.000Z"),
+            sessionsSinceRead: 0,
+            fires: 0,
+          },
+        ],
+      ]),
+    };
+
+    const text = render([updatedLately, readLately], 40, usage);
+
+    expect(text.indexOf("Read lately")).toBeLessThan(text.indexOf("Updated lately"));
+  });
+
+  test("leaves out a fact that left the index and fills the cap with the next one", () => {
+    const stale = memory(
+      { kind: "fact", title: "Stale", body: "b" },
+      { n: 18, scope: USER, updated: "2026-02-20T00:00:00.000Z" },
+    );
+    const older = memory(
+      { kind: "fact", title: "Older", body: "b" },
+      { n: 19, scope: USER, updated: "2026-01-01T00:00:00.000Z" },
+    );
+    const usage: IndexUsage = {
+      ...NO_USAGE,
+      now: new Date("2026-06-01T00:00:00.000Z"),
+      stats: new Map([[stale.id, { reads: 0, sessionsSinceRead: 20, fires: 0 }]]),
+    };
+
+    const text = render([stale, older], 1, usage);
+
+    expect(text).not.toContain("Stale");
+    expect(text).toContain("Older");
+  });
+
   test("leaves gotchas and references out of the block", () => {
     const text = render([
       memory(
@@ -135,6 +189,7 @@ describe("renderSessionBlock", () => {
       chain: CHAIN,
       memories: [shownRule, hiddenGotcha, cutFact, keptFact],
       indexLines: 1,
+      usage: NO_USAGE,
     });
 
     expect(shown).toEqual([shownRule.id, keptFact.id]);

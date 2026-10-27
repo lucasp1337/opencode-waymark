@@ -1,7 +1,8 @@
 import type { MemoryId } from "../../model/id";
-import { isAlwaysOn, KIND_DELIVERY, KINDS, type Kind } from "../../model/kind";
+import { isAlwaysOn, KINDS, type Kind } from "../../model/kind";
 import type { Memory } from "../../model/memory";
 import { type ScopeChain, scopeKey } from "../../model/scope";
+import { type IndexUsage, visibleIndex } from "../lifecycle/index-exit";
 import { alwaysOnText } from "./always-on";
 import { INSTRUCTIONS } from "./instructions";
 
@@ -10,6 +11,7 @@ interface BlockInput {
   // Active memories on the chain; superseded ones are already left out.
   readonly memories: readonly Memory[];
   readonly indexLines: number;
+  readonly usage: IndexUsage;
 }
 
 function indexLine(memory: Memory): string {
@@ -37,14 +39,6 @@ function plural(kind: Kind): string {
   return `${kind.charAt(0).toUpperCase()}${kind.slice(1)}s`;
 }
 
-// Most recently updated first, cut to the cap, then grouped by scope for reading.
-function indexEntries(memories: readonly Memory[], limit: number): Memory[] {
-  return memories
-    .filter((memory) => KIND_DELIVERY[memory.kind] === "index")
-    .toSorted((a, b) => b.updated.localeCompare(a.updated))
-    .slice(0, limit);
-}
-
 interface SessionBlock {
   readonly text: string;
   // Exactly the memories the text contains.
@@ -58,7 +52,8 @@ export function renderSessionBlock(input: BlockInput): SessionBlock {
   const onChain = input.memories.filter((memory) => keys.has(scopeKey(memory.scope)));
   const alwaysOnKinds = KINDS.filter(isAlwaysOn);
   const alwaysOn = onChain.filter((memory) => isAlwaysOn(memory.kind));
-  const index = indexEntries(onChain, input.indexLines);
+  // Cut to the cap after the memories that left the index are gone, then grouped by scope.
+  const index = visibleIndex(onChain, input.usage).slice(0, input.indexLines);
   const text = [
     INSTRUCTIONS,
     ...alwaysOnKinds.flatMap((kind) =>

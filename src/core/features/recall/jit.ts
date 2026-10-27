@@ -5,6 +5,9 @@ import { type ScopeChain, scopeKey } from "../../model/scope";
 import { wordsOf } from "../../model/words";
 import type { ToolCallInfo } from "../../port";
 import type { MemoryStore } from "../../store/memory-store";
+import type { Telemetry } from "../../telemetry/telemetry";
+import type { NoisyThresholds } from "../lifecycle/lifecycle-settings";
+import { noisyGotchaLine } from "../lifecycle/noisy-gotcha";
 import type { RecallScope } from "./recall-scope";
 import { type CallFacts, callFacts, matchesTriggers } from "./trigger-match";
 
@@ -12,6 +15,8 @@ interface JitDeps {
   // null: this session gets no recall.
   recallScope(sessionID: string): Promise<RecallScope | null>;
   readonly store: Pick<MemoryStore, "inScopes" | "generation">;
+  readonly counters: Pick<Telemetry, "recordFire" | "firesWithin">;
+  readonly noisy: NoisyThresholds;
 }
 
 interface Jit {
@@ -26,6 +31,8 @@ interface SessionRecall {
   // Insertion order is match order, so the oldest match is delivered first.
   readonly queued: Map<MemoryId, Memory>;
   words: ReadonlySet<string>;
+  // A session is asked about a noisy gotcha at most once.
+  noisyChecked: boolean;
 }
 
 interface Candidate {
@@ -67,13 +74,25 @@ function jitText(memory: Memory): string {
   return `waymark · ${memory.kind} · ${memory.title}\n${memory.body}`;
 }
 
-function takeQueued(recall: SessionRecall): string {
+type DeliveryDeps = Pick<JitDeps, "counters" | "noisy">;
+
+function deliver({ counters, noisy }: DeliveryDeps, recall: SessionRecall, memory: Memory): string {
+  recall.delivered.add(memory.id);
+  const firesBefore = counters.firesWithin(memory.id, noisy.days);
+  counters.recordFire(memory.id);
+  const check = recall.noisyChecked ? null : noisyGotchaLine(memory, firesBefore, noisy);
+  if (check === null) {
+    return jitText(memory);
+  }
+  recall.noisyChecked = true;
+  return `${jitText(memory)}\n${check}`;
+}
+
+// The only write on the tool-call path: a delivery is rare, so ordinary calls stay read-only.
+function takeQueued(deps: DeliveryDeps, recall: SessionRecall): string {
   const due = [...recall.queued.values()];
   recall.queued.clear();
-  for (const memory of due) {
-    recall.delivered.add(memory.id);
-  }
-  return due.map(jitText).join("\n\n");
+  return due.map((memory) => deliver(deps, recall, memory)).join("\n\n");
 }
 
 function queueMatches(
@@ -99,7 +118,12 @@ export function createJit(deps: JitDeps): Jit {
     if (known !== undefined) {
       return known;
     }
-    const fresh: SessionRecall = { delivered: new Set(), queued: new Map(), words: new Set() };
+    const fresh: SessionRecall = {
+      delivered: new Set(),
+      queued: new Map(),
+      words: new Set(),
+      noisyChecked: false,
+    };
     sessions.set(sessionID, fresh);
     return fresh;
   }
@@ -118,7 +142,7 @@ export function createJit(deps: JitDeps): Jit {
       const recall = recallOf(call.sessionID);
       const facts = callFacts(call, scope.directory, recall.words);
       queueMatches(recall, candidatesFor(scope.chain), facts);
-      return call.appendable && recall.queued.size > 0 ? takeQueued(recall) : null;
+      return call.appendable && recall.queued.size > 0 ? takeQueued(deps, recall) : null;
     },
     forget(sessionID) {
       sessions.delete(sessionID);
