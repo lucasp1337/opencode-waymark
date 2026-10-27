@@ -48,4 +48,13 @@ describe("products", () => {
       declined: [[API, WEB]],
     });
   });
+
+  test("/memory link lets this session save to the product at once", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_command", { args: "link payments" }, SESSION);
+
+    expect(await fx.host.callTool("memory_save", productRule, SESSION)).toStartWith(
+      `Saved [${FIRST_ID}] rule · product:payments`,
+    );
+  });
 });

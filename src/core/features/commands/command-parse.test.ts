@@ -45,6 +45,7 @@ describe("parseMemoryCommand", () => {
     ["an unknown subcommand", "frobnicate"],
     ["setup, which the command template handles", "setup"],
     ["review with extra words", "review now"],
+    ["unlink with extra words", "unlink github.com/acme/web"],
   ])("%s gets the usage text", (_case, args) => {
     const parsed = parseMemoryCommand(args);
 
@@ -75,5 +76,35 @@ describe("parseMemoryCommand", () => {
     const parsed = parseMemoryCommand(args);
 
     expect(!parsed.ok && parsed.error).toStartWith("Not merged: expected /memory org merge");
+  });
+
+  test("link names the product", () => {
+    expect(parseMemoryCommand("link payments")).toEqual({
+      ok: true,
+      value: { name: "link", product: "payments" },
+    });
+  });
+
+  test("unlink takes no arguments", () => {
+    expect(parseMemoryCommand("unlink")).toEqual({ ok: true, value: { name: "unlink" } });
+  });
+
+  test("the usage text lists link and unlink", () => {
+    const parsed = parseMemoryCommand("help");
+
+    expect(!parsed.ok && parsed.error).toContain("- /memory link <product>: ");
+    expect(!parsed.ok && parsed.error).toContain("- /memory unlink: ");
+  });
+
+  test.each([
+    ["no product", "link"],
+    ["two words", "link payments now"],
+    ["a path", "link acme/payments"],
+    ["a parent directory", "link .."],
+  ])("link with %s is refused with its usage", (_case, args) => {
+    expect(parseMemoryCommand(args)).toEqual({
+      ok: false,
+      error: "Not linked: expected /memory link <product>, with a plain name such as payments.",
+    });
   });
 });

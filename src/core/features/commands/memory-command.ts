@@ -5,6 +5,7 @@ import type { ScopeChain } from "../../model/scope";
 import type { JsonSchemaObject, ToolDef } from "../../port";
 import type { ToolDeps } from "../tool-deps";
 import { type MemoryCommand, parseMemoryCommand } from "./command-parse";
+import { linkSessionRepo, unlinkSessionRepo } from "./link-repo";
 import { listChain } from "./list-chain";
 import { type MergeDeps, mergeOrgs } from "./merge-orgs";
 import { moveMemory } from "./move-memory";
@@ -48,6 +49,10 @@ async function runCommand(
       return reviewReport(deps.store, chain, deps.reviewSignals(chain));
     case "move":
       return await moveMemory(deps, command, chain);
+    case "link":
+      return linkSessionRepo(deps, chain, command.product);
+    case "unlink":
+      return unlinkSessionRepo(deps, chain);
   }
 }
 
@@ -68,7 +73,7 @@ export function memoryCommandTool(deps: MemoryCommandDeps): ToolDef {
   return {
     name: "memory_command",
     description:
-      "Runs a /memory subcommand: list the memories of this session's scopes, review, move a memory to another scope, or merge two orgs. Pass the user's arguments exactly as typed. Call only when the user ran /memory.",
+      "Runs a /memory subcommand: list the memories of this session's scopes, review, move a memory to another scope, merge two orgs, or link this session's repo to a product and unlink it. Pass the user's arguments exactly as typed. Call only when the user ran /memory.",
     inputSchema: INPUT_SCHEMA,
     execute: (input, ctx) => commandReply(deps, input, ctx.sessionID),
   };
