@@ -9,6 +9,7 @@ import {
 } from "./memory";
 import { ownField } from "./own-field";
 import { err, ok, type Result } from "./result";
+import { isWord } from "./words";
 
 export type ContentPatch = Partial<Pick<MemoryContent, "title" | "body" | "why" | "triggers">>;
 
@@ -43,7 +44,7 @@ const TRIGGER_ENTRY: { readonly [F in TriggerField]: (entry: string) => boolean 
   paths: (entry) => !LINE_BREAK.test(entry),
   commands: (entry) => !LINE_BREAK.test(entry),
   tools: (entry) => !WHITESPACE.test(entry),
-  keywords: (entry) => !WHITESPACE.test(entry),
+  keywords: isWord,
 };
 
 function isTriggerField(key: string): key is TriggerField {

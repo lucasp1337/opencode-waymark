@@ -1,3 +1,4 @@
+import type { MemoryId } from "../../model/id";
 import { isAlwaysOn, KIND_DELIVERY, KINDS, type Kind } from "../../model/kind";
 import type { Memory } from "../../model/memory";
 import { type ScopeChain, scopeKey } from "../../model/scope";
@@ -44,23 +45,33 @@ function indexEntries(memories: readonly Memory[], limit: number): Memory[] {
     .slice(0, limit);
 }
 
+interface SessionBlock {
+  readonly text: string;
+  // Exactly the memories the text contains.
+  readonly shown: readonly MemoryId[];
+}
+
 // The fixed instructions, then each always-on kind in full (rules before preferences), then the
 // index of facts and decisions.
-export function renderSessionBlock(input: BlockInput): string {
-  const { chain, memories } = input;
-  const alwaysOn = KINDS.filter(isAlwaysOn).flatMap((kind) =>
-    section(
-      `### ${plural(kind)}`,
-      byScope(
-        chain,
-        memories.filter((memory) => memory.kind === kind),
-        alwaysOnText,
+export function renderSessionBlock(input: BlockInput): SessionBlock {
+  const keys = new Set(input.chain.map(scopeKey));
+  const onChain = input.memories.filter((memory) => keys.has(scopeKey(memory.scope)));
+  const alwaysOnKinds = KINDS.filter(isAlwaysOn);
+  const alwaysOn = onChain.filter((memory) => isAlwaysOn(memory.kind));
+  const index = indexEntries(onChain, input.indexLines);
+  const text = [
+    INSTRUCTIONS,
+    ...alwaysOnKinds.flatMap((kind) =>
+      section(
+        `### ${plural(kind)}`,
+        byScope(
+          input.chain,
+          alwaysOn.filter((memory) => memory.kind === kind),
+          alwaysOnText,
+        ),
       ),
     ),
-  );
-  const index = section(
-    "### Index (memory_read for the full text)",
-    byScope(chain, indexEntries(memories, input.indexLines), indexLine),
-  );
-  return [INSTRUCTIONS, ...alwaysOn, ...index].join("\n");
+    ...section("### Index (memory_read for the full text)", byScope(input.chain, index, indexLine)),
+  ].join("\n");
+  return { text, shown: [...alwaysOn, ...index].map((memory) => memory.id) };
 }

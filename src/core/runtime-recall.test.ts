@@ -3,7 +3,7 @@ import { SESSION, useRuntime } from "../../test/runtime-fixture";
 import { INSTRUCTIONS } from "./features/recall/instructions";
 
 const runtime = useRuntime();
-const withReviewers = useRuntime({ subagents: ["reviewer"] });
+const withReviewers = useRuntime({ options: { subagents: ["reviewer"] } });
 
 const rule = {
   kind: "rule",
@@ -60,8 +60,117 @@ describe("session block", () => {
   });
 });
 
+const gotcha = {
+  kind: "gotcha",
+  scope: "repo",
+  title: "Deploys need the VPN",
+  body: "Connect the VPN first or the upload hangs.",
+  triggers: { commands: ["make deploy"] },
+};
+
+function bashCall(sessionID: string, appendable = true) {
+  return {
+    sessionID,
+    tool: "bash",
+    args: { command: "make deploy" },
+    touchedPaths: [],
+    command: "make deploy",
+    appendable,
+  };
+}
+
+describe("just-in-time recall", () => {
+  test("a gotcha saved earlier is appended after a matching tool call in a later session", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", gotcha, SESSION);
+    fx.host.sessions.set("ses_next", { id: "ses_next", directory: "/work/api" });
+
+    expect(await fx.host.emitToolAfter(bashCall("ses_next"))).toEqual([
+      "waymark · gotcha · Deploys need the VPN\nConnect the VPN first or the upload hangs.",
+    ]);
+  });
+
+  test("waits for an output it can append to", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", gotcha, SESSION);
+
+    expect(await fx.host.emitToolAfter(bashCall(SESSION, false))).toEqual([]);
+    expect(await fx.host.emitToolAfter({ ...bashCall(SESSION), command: "ls" })).toHaveLength(1);
+  });
+
+  test("a subagent session gets no just-in-time recall", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", gotcha, SESSION);
+    fx.host.sessions.set("ses_sub", {
+      id: "ses_sub",
+      parentID: SESSION,
+      agent: "general",
+      directory: "/work/api",
+    });
+
+    expect(await fx.host.emitToolAfter(bashCall("ses_sub"))).toEqual([]);
+  });
+});
+
+describe("keyword recall", () => {
+  test("a gotcha triggered by a word of the user's message is appended to the next tool output", async () => {
+    const fx = runtime();
+    await fx.host.callTool(
+      "memory_save",
+      { ...gotcha, title: "Invoices need the tax id", triggers: { keywords: ["invoice"] } },
+      SESSION,
+    );
+
+    await fx.host.emitUserMessage(SESSION, "Please fix the invoice template");
+
+    expect(await fx.host.emitToolAfter({ ...bashCall(SESSION), command: "ls" })).toHaveLength(1);
+  });
+});
+
+describe("a deleted session", () => {
+  test("starts from nothing when its id is seen again", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_save", gotcha, SESSION);
+    await fx.host.emitToolAfter(bashCall(SESSION));
+
+    await fx.host.emitSessionEvent({ type: "deleted", sessionID: SESSION });
+
+    expect(await fx.host.emitToolAfter(bashCall(SESSION))).toHaveLength(1);
+  });
+});
+
+describe("hosts with fewer capabilities", () => {
+  const withoutSystem = useRuntime({
+    capabilities: {
+      systemInjection: false,
+      toolOutputMutation: true,
+      compactionHook: true,
+      toast: true,
+    },
+  });
+  const withoutToolOutput = useRuntime({
+    capabilities: {
+      systemInjection: true,
+      toolOutputMutation: false,
+      compactionHook: true,
+      toast: true,
+    },
+  });
+
+  test("no system prompt injection means no session block", async () => {
+    expect(await withoutSystem().host.emitSystem(SESSION)).toEqual([]);
+  });
+
+  test("no tool output mutation means no just-in-time recall", async () => {
+    const fx = withoutToolOutput();
+    await fx.host.callTool("memory_save", gotcha, SESSION);
+
+    expect(await fx.host.emitToolAfter(bashCall(SESSION))).toEqual([]);
+  });
+});
+
 describe("plugin options", () => {
-  const misconfigured = useRuntime({ subagents: "reviewer" });
+  const misconfigured = useRuntime({ options: { subagents: "reviewer" } });
 
   test("a malformed option is logged and ignored", () => {
     const fx = misconfigured();

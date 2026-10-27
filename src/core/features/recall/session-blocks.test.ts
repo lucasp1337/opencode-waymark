@@ -3,6 +3,7 @@ import { memoryId } from "../../../../test/memory-id";
 import { validContent } from "../../../../test/valid-content";
 import { type Memory, newMemory } from "../../model/memory";
 import type { ScopeChain } from "../../model/scope";
+import type { LogLevel } from "../../port";
 import { INSTRUCTIONS } from "./instructions";
 import type { RecallScope } from "./recall-scope";
 import { createSessionBlocks } from "./session-blocks";
@@ -18,14 +19,24 @@ function rule(id: string, title: string, supersedes?: string): Memory {
   });
 }
 
+interface Logged {
+  readonly level: LogLevel;
+  readonly msg: string;
+  readonly data: unknown;
+}
+
 function blocksOver(
   stored: Memory[],
   scope: RecallScope | null = { chain: CHAIN, directory: "/d" },
+  logged: Logged[] = [],
 ) {
   return createSessionBlocks({
     store: { inScopes: () => stored },
     recallScope: () => Promise.resolve(scope),
     indexLines: 40,
+    log: (level, msg, data) => {
+      logged.push({ level, msg, data });
+    },
   });
 }
 
@@ -62,5 +73,31 @@ describe("createSessionBlocks", () => {
 
   test("an empty store still gives the instructions", async () => {
     expect(await blocksOver([]).blockFor("s")).toBe(INSTRUCTIONS);
+  });
+
+  test("logs the memories each session block shows", async () => {
+    const logged: Logged[] = [];
+
+    await blocksOver([rule("01JB8Z6Q4R3M2N1P0V9W8X0001", "Use UTC")], undefined, logged).blockFor(
+      "ses_a",
+    );
+
+    expect(logged).toEqual([
+      {
+        level: "info",
+        msg: "session block rendered",
+        data: { sessionID: "ses_a", memories: ["01JB8Z6Q4R3M2N1P0V9W8X0001"] },
+      },
+    ]);
+  });
+
+  test("logs a session that gets no recall", async () => {
+    const logged: Logged[] = [];
+
+    await blocksOver([], null, logged).blockFor("ses_sub");
+
+    expect(logged).toEqual([
+      { level: "info", msg: "no recall for session", data: { sessionID: "ses_sub" } },
+    ]);
   });
 });

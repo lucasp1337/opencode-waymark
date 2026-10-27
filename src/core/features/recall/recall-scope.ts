@@ -43,5 +43,8 @@ export function createRecallScopes(deps: RecallScopeDeps) {
       pending.catch(() => decided.delete(sessionID));
       return pending;
     },
+    forget(sessionID: string): void {
+      decided.delete(sessionID);
+    },
   };
 }

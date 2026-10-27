@@ -138,6 +138,15 @@ export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
     });
   };
 
+  const dispatchSessionEvent = async (event: SessionEvent): Promise<void> => {
+    if (event.type === "deleted") {
+      agents.delete(event.sessionID);
+    }
+    for (const fn of registry.sessionEvent) {
+      await fn(event);
+    }
+  };
+
   const guarded = async (hook: string, run: () => Promise<void> | void): Promise<void> => {
     try {
       await run();
@@ -160,11 +169,8 @@ export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
         guarded("event", async () => {
           trace("event", event, {});
           const mapped = sessionEventOf(event);
-          if (mapped === undefined) {
-            return;
-          }
-          for (const fn of registry.sessionEvent) {
-            await fn(mapped);
+          if (mapped !== undefined) {
+            await dispatchSessionEvent(mapped);
           }
         }),
       "chat.message": (hookInput, output) =>

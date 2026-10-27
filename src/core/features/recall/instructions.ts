@@ -1,4 +1,4 @@
-// Fixed text from the brief; changing it needs the owner's approval.
+// Fixed text; changing it needs the owner's approval.
 export const INSTRUCTIONS = `## Memory (waymark)
 You have persistent memory across sessions. Rules and preferences below are binding.
 

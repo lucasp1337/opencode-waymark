@@ -66,6 +66,7 @@ describe("onToolAfter", () => {
 
       const [call] = afterCalls(env, item.tool);
       expect(call).toBeDefined();
+      expect(at(call, "appendable")).toBe(true);
       if (item.pathArg !== undefined) {
         expect(at(call, "touchedPaths")).toEqual(expect.arrayContaining([expect.any(String)]));
         expect(keysOf(at(call, "args"))).toContain(item.pathArg);

@@ -25,7 +25,7 @@ function memory(content: MemoryContent, { n, scope, updated }: Fixture): Memory 
 }
 
 function render(memories: Memory[], indexLines = 40): string {
-  return renderSessionBlock({ chain: CHAIN, memories, indexLines });
+  return renderSessionBlock({ chain: CHAIN, memories, indexLines }).text;
 }
 
 describe("renderSessionBlock", () => {
@@ -114,5 +114,29 @@ describe("renderSessionBlock", () => {
     ]);
 
     expect(text).toBe(INSTRUCTIONS);
+  });
+
+  test("reports exactly the memories it shows", () => {
+    const shownRule = memory(
+      { kind: "rule", title: "Use UTC", body: "", why: "w" },
+      { n: 12, scope: USER },
+    );
+    const hiddenGotcha = memory(
+      { kind: "gotcha", title: "memory", body: "b", triggers: { tools: ["bash"] } },
+      { n: 13, scope: USER },
+    );
+    const cutFact = memory(
+      { kind: "fact", title: "Use", body: "b" },
+      { n: 14, scope: USER, updated: "2025-01-01T00:00:00.000Z" },
+    );
+    const keptFact = memory({ kind: "fact", title: "Kept", body: "b" }, { n: 15, scope: USER });
+
+    const { shown } = renderSessionBlock({
+      chain: CHAIN,
+      memories: [shownRule, hiddenGotcha, cutFact, keptFact],
+      indexLines: 1,
+    });
+
+    expect(shown).toEqual([shownRule.id, keptFact.id]);
   });
 });

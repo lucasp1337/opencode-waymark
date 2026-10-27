@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MemoryId } from "../src/core/model/id";
+import type { Capabilities } from "../src/core/port";
 import { createRuntime, type Runtime } from "../src/core/runtime";
 import type { Git } from "../src/core/scope/git";
 import { nodeFileSystem } from "../src/core/store/fs";
@@ -60,11 +61,17 @@ interface Activation {
   readonly clock: FakeClock;
   readonly newId: () => MemoryId;
   readonly started: RuntimeFixture[];
-  readonly options: unknown;
+  readonly setup: RuntimeSetup;
+}
+
+interface RuntimeSetup {
+  // Plugin options, as the user's opencode config would pass them.
+  readonly options?: unknown;
+  readonly capabilities?: Capabilities;
 }
 
 function start(activation: Activation): RuntimeFixture {
-  const host = createFakeHost();
+  const host = createFakeHost(activation.setup.capabilities);
   host.sessions.set(SESSION, { id: SESSION, directory: REPO_DIR });
   host.sessions.set(PLAIN_SESSION, { id: PLAIN_SESSION, directory: PLAIN_DIR });
   const { dataDir, clock, newId } = activation;
@@ -74,7 +81,7 @@ function start(activation: Activation): RuntimeFixture {
     git: fakeGit,
     now: clock.now,
     newId,
-    options: activation.options,
+    options: activation.setup.options,
   });
   const fixture: RuntimeFixture = {
     host,
@@ -91,8 +98,8 @@ function start(activation: Activation): RuntimeFixture {
 }
 
 // Runtimes over a fresh temp data dir with a fake clock and fake ids, disposed and deleted after
-// each test. `options` are the plugin options every runtime of this test file gets.
-export function useRuntime(options?: unknown): () => RuntimeFixture {
+// each test.
+export function useRuntime(setup: RuntimeSetup = {}): () => RuntimeFixture {
   const started: RuntimeFixture[] = [];
   afterEach(() => {
     for (const fixture of started.splice(0)) {
@@ -106,6 +113,6 @@ export function useRuntime(options?: unknown): () => RuntimeFixture {
       clock: fakeClock(),
       newId: fakeIds(),
       started,
-      options,
+      setup,
     });
 }

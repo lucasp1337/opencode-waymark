@@ -57,19 +57,23 @@ export function createFakeHost(capabilities: Capabilities = ALL_CAPABILITIES): F
   const compaction: Array<(sessionID: string) => Promise<string | null>> = [];
   const tools = new Map<string, ToolDef>();
   const sessions = new Map<string, SessionMeta>();
+  const commands = new Map<string, { description: string; template: string }>();
+  const toasts: string[] = [];
+  const logs: LogEntry[] = [];
 
+  // Closures rather than `this`, so methods can be passed around like the real adapter's.
   return {
     capabilities,
     tools,
-    commands: new Map(),
-    toasts: [],
-    logs: [],
+    commands,
+    toasts,
+    logs,
     sessions,
     registerTool: (def) => {
       tools.set(def.name, def);
     },
-    registerCommand(name, description, template) {
-      this.commands.set(name, { description, template });
+    registerCommand: (name, description, template) => {
+      commands.set(name, { description, template });
     },
     onSystem: (fn) => system.push(fn),
     onUserMessage: (fn) => userMessage.push(fn),
@@ -82,12 +86,12 @@ export function createFakeHost(capabilities: Capabilities = ALL_CAPABILITIES): F
         ? Promise.reject(new Error(`unknown session ${sessionID}`))
         : Promise.resolve(meta);
     },
-    toast(message) {
-      this.toasts.push(message);
+    toast: (message) => {
+      toasts.push(message);
       return Promise.resolve();
     },
-    log(level, msg, data) {
-      this.logs.push(data === undefined ? { level, msg } : { level, msg, data });
+    log: (level, msg, data) => {
+      logs.push(data === undefined ? { level, msg } : { level, msg, data });
     },
     callTool(name, input, sessionID) {
       const def = tools.get(name);

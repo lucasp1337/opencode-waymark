@@ -30,6 +30,11 @@ export function kindsRequiring(requirement: Requirement): Kind[] {
   return KINDS.filter((kind) => KIND_REQUIREMENTS[kind].includes(requirement));
 }
 
+// Gotchas exist to be recalled after a matching tool call; a fact joins them when it has triggers.
+export function isRecalledByTrigger(kind: Kind): boolean {
+  return KIND_DELIVERY[kind] === "jit" || kind === "fact";
+}
+
 export function isAlwaysOn(kind: Kind): boolean {
   return KIND_DELIVERY[kind] === "always";
 }

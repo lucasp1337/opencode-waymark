@@ -21,6 +21,7 @@ export function appendText(output: unknown, text: string): void {
   }
   const content: unknown = Reflect.get(output, "content");
   if (Array.isArray(content)) {
-    content.push({ type: "text", text });
+    const items: unknown[] = content;
+    items.push({ type: "text", text });
   }
 }

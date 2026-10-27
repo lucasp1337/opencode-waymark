@@ -358,3 +358,20 @@ describe("get", () => {
     expect(store.get(fixture(1).id)).toBeUndefined();
   });
 });
+
+describe("generation", () => {
+  test("changes with every save and forget, and not on reads", () => {
+    const { store } = openStore(tempRoot());
+    const start = store.generation();
+
+    store.save(fixture(1));
+    const afterSave = store.generation();
+    store.inScopes(CHAIN);
+    const afterRead = store.generation();
+    store.forget(fixture(1));
+
+    expect(afterSave).not.toBe(start);
+    expect(afterRead).toBe(afterSave);
+    expect(store.generation()).not.toBe(afterSave);
+  });
+});

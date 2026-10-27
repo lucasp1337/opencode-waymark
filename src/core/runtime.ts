@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { guardedTool } from "./features/guarded-tool";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
+import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
 import { PRESETS } from "./features/recall/presets";
 import { createRecallScopes } from "./features/recall/recall-scope";
@@ -66,17 +67,41 @@ function registerTools({ host, deps, store, scopes }: Wiring): void {
   }
 }
 
-// Recall reaches the agent through the system prompt; a host without that degrades to tools only.
+// Recall reaches the agent through the system prompt and tool outputs; a host lacking either
+// degrades to the rest.
 function registerRecall({ host, deps, store, scopes }: Wiring): void {
   const { options, problems } = parseOptions(deps.options);
   for (const problem of problems) {
     host.log("warn", "plugin option ignored", { problem });
   }
-  const { recallScope } = createRecallScopes({ host, scopes, subagents: options.subagents });
+  const recall = createRecallScopes({ host, scopes, subagents: options.subagents });
+  const recallScope = (sessionID: string) => recall.recallScope(sessionID);
+  const forgetters: Array<{ forget(sessionID: string): void }> = [recall];
   if (host.capabilities.systemInjection) {
-    const blocks = createSessionBlocks({ store, recallScope, indexLines: PRESET.indexLines });
+    const blocks = createSessionBlocks({
+      store,
+      recallScope,
+      indexLines: PRESET.indexLines,
+      log: host.log,
+    });
     host.onSystem((sessionID) => blocks.blockFor(sessionID));
+    forgetters.push(blocks);
   }
+  if (host.capabilities.toolOutputMutation) {
+    const jit = createJit({ recallScope, store });
+    host.onUserMessage((sessionID, text) => jit.onUserMessage(sessionID, text));
+    host.onToolAfter((call) => jit.onToolAfter(call));
+    forgetters.push(jit);
+  }
+  // Per-session state would otherwise grow for as long as opencode runs.
+  host.onSessionEvent((event) => {
+    if (event.type === "deleted") {
+      for (const forgetter of forgetters) {
+        forgetter.forget(event.sessionID);
+      }
+    }
+    return Promise.resolve();
+  });
 }
 
 function wire(host: HostPort, deps: RuntimeDeps, store: MemoryStore): void {

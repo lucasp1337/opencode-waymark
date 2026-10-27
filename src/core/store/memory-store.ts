@@ -27,6 +27,8 @@ export interface MemoryStore {
   get(id: MemoryId): Memory | undefined;
   inScopes(scopes: ScopeChain): Memory[];
   related(text: string, scopes: ScopeChain, limit: number): Memory[];
+  // Changes after every save and forget, so readers can tell when what they cached is stale.
+  generation(): number;
   close(): void;
 }
 
@@ -53,6 +55,7 @@ export function openMemoryStore(
   mkdirSync(root, { recursive: true });
   const files = createMemoryFiles(root, fs);
   const { cache, report, reset } = openSyncedCache(join(root, CACHE_FILE), files);
+  let generation = 0;
 
   const store: MemoryStore = {
     save(memory) {
@@ -68,16 +71,19 @@ export function openMemoryStore(
         throw new MemoryFileMissingError(target);
       }
       cache.put(memory, target, mtimeMs);
+      generation += 1;
     },
     // File first: a crash in between leaves a row that the next sync drops, not a file that
     // would come back.
     forget(memory) {
       files.remove(memory);
       cache.delete(memory.id);
+      generation += 1;
     },
     get: (id) => cache.get(id)?.memory,
     inScopes: (scopes) => cache.inScopes(scopes),
     related: (text, scopes, limit) => cache.related(text, scopes, limit),
+    generation: () => generation,
     close: () => cache.close(),
   };
   return { store, report, cacheReset: reset };
