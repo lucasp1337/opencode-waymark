@@ -1,4 +1,4 @@
-import { err, type Result } from "../model/result";
+import type { Result } from "../model/result";
 import { repoIdIn, type ScopeChain, type ScopeRef } from "../model/scope";
 import { notify } from "../notify";
 import type { HostPort } from "../port";
@@ -7,6 +7,7 @@ import { type ResolvedScopes, resolveScopes } from "./chain";
 import type { Git } from "./git";
 import { productOf } from "./products";
 import { type OrgEntry, type OrgRef, resolveOrg } from "./registry";
+import { catchRegistryIo } from "./registry-file";
 
 export interface SessionScopes {
   chainFor(sessionID: string): Promise<ScopeChain>;
@@ -43,16 +44,8 @@ function resolveFor(deps: SessionScopeDeps, directory: string): Resolution {
   return { resolved, cacheable: true };
 }
 
-function fromRegistry<T>(read: () => Result<T, string>): Result<T, string> {
-  try {
-    return read();
-  } catch (error) {
-    return err(String(error));
-  }
-}
-
 function enterOrg(deps: SessionScopeDeps, org: OrgRef): Result<OrgEntry, string> {
-  return fromRegistry(() => resolveOrg(deps.fs, deps.registryFile, org));
+  return catchRegistryIo(() => resolveOrg(deps.fs, deps.registryFile, org));
 }
 
 // The registry is read on every call, not cached with the chain, so a merge or a product link
@@ -84,7 +77,7 @@ function withProduct(deps: SessionScopeDeps, chain: ScopeChain): ScopeChain {
   if (repo === undefined) {
     return chain;
   }
-  const product = fromRegistry(() => productOf(deps.fs, deps.registryFile, repo));
+  const product = catchRegistryIo(() => productOf(deps.fs, deps.registryFile, repo));
   if (!product.ok) {
     deps.host.log("warn", "product links not applied", { repo, error: product.error });
     return chain;

@@ -234,7 +234,10 @@ describe("createSessionScopes", () => {
       gitAnswering(found("/work/api"), { status: "absent" }),
       registryFile,
     );
-    const repoId = repoIdIn(await scopes.chainFor("ses_a")) ?? "";
+    const repoId = repoIdIn(await scopes.chainFor("ses_a"));
+    if (repoId === undefined) {
+      throw new Error("a repo without an origin must still have a repo scope");
+    }
     linkRepos(nodeFileSystem, registryFile, { repos: [repoId], product: "notes" });
 
     expect(await scopes.chainFor("ses_a")).toEqual([

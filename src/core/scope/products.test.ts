@@ -9,6 +9,7 @@ import {
   isProductName,
   linkRepos,
   pairStatus,
+  productNameOf,
   productOf,
   unlinkRepo,
 } from "./products";
@@ -57,8 +58,18 @@ describe("isProductName", () => {
     expect(isProductName(name)).toBe(true);
   });
 
-  test.each(["", "a/b", "..", ".", "two words", "naïve"])("%p is not", (name) => {
+  test.each(["", "a/b", "..", ".", "two words", "naïve", "Payments"])("%p is not", (name) => {
     expect(isProductName(name)).toBe(false);
+  });
+});
+
+describe("productNameOf", () => {
+  test("keeps the registry's one spelling: lower case", () => {
+    expect(productNameOf("Payments")).toBe("payments");
+  });
+
+  test("is undefined for text that is not a product name in any case", () => {
+    expect(productNameOf("Acme/Payments")).toBeUndefined();
   });
 });
 
@@ -255,6 +266,21 @@ describe("pairStatus", () => {
     });
   });
 
+  test("a pair written unsorted by hand is still found, and rewritten sorted", () => {
+    const file = registryFile({ declined: [[WEB, API]] });
+
+    expect(pairStatus(nodeFileSystem, file, [API, WEB])).toMatchObject({
+      value: { declined: true },
+    });
+    declinePair(nodeFileSystem, file, [API, DOCS]);
+    expect(readJson(file)).toEqual({
+      declined: [
+        [API, WEB],
+        [API, DOCS],
+      ],
+    });
+  });
+
   test("two repos nobody answered about are not declined", () => {
     expect(pairStatus(nodeFileSystem, registryFile(), [API, WEB])).toEqual({
       ok: true,
@@ -280,6 +306,16 @@ describe("a registry that cannot be understood", () => {
       "a product name that is a path",
       { products: { "../x": { repos: [] } } },
       'product "../x" is not a plain name',
+    ],
+    [
+      "a product name in upper case",
+      { products: { Payments: { repos: [] } } },
+      'product "Payments" is not a plain name',
+    ],
+    [
+      "a repo in two products",
+      { products: { payments: { repos: [API] }, storefront: { repos: [WEB, API] } } },
+      `repo ${API} is in products "payments" and "storefront"`,
     ],
     ["declined that is an object", { declined: {} }, '"declined" must be a list of repo id pairs'],
     [

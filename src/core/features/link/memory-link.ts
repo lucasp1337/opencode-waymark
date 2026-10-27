@@ -2,7 +2,7 @@ import { ownField } from "../../model/own-field";
 import { err, ok, type Result } from "../../model/result";
 import { isSafeScopeId } from "../../model/scope";
 import type { JsonSchemaObject, ToolDef } from "../../port";
-import { declinePair, isProductName, type LinkRequest, linkRepos } from "../../scope/products";
+import { declinePair, type LinkRequest, linkRepos, productNameOf } from "../../scope/products";
 import type { FileSystem } from "../../store/fs";
 import { declinedReply, linkedReply } from "./link-replies";
 
@@ -53,7 +53,8 @@ function parseProduct(value: unknown): Result<string | undefined, string> {
   if (value === undefined) {
     return ok(undefined);
   }
-  return typeof value === "string" && isProductName(value) ? ok(value) : err(PRODUCT_PROBLEM);
+  const name = typeof value === "string" ? productNameOf(value) : undefined;
+  return name === undefined ? err(PRODUCT_PROBLEM) : ok(name);
 }
 
 function parseDecline(value: unknown): Result<boolean, string> {

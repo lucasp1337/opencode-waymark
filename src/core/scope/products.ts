@@ -24,9 +24,16 @@ interface Products {
 
 type Registry = LoadedRegistry<Products>;
 
-// A product name becomes one directory under the data root.
+// A product name becomes one directory under the data root. Lower case only, so two spellings
+// cannot share one directory on a case-insensitive file system.
 export function isProductName(name: string): boolean {
-  return isSafeScopeId(name) && !name.includes("/");
+  return isSafeScopeId(name) && !name.includes("/") && name === name.toLowerCase();
+}
+
+// The product name a user or agent typed, in the one spelling the registry keeps.
+export function productNameOf(text: string): string | undefined {
+  const name = text.toLowerCase();
+  return isProductName(name) ? name : undefined;
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -43,6 +50,21 @@ function reposOf(name: string, entry: unknown): Result<readonly string[], string
     : err(`product "${name}" must be an object with a "repos" list of repo ids`);
 }
 
+// A chain has one product slot, so a repo listed in two products could not be resolved.
+function inOneProductEach(repos: ReadonlyMap<string, readonly string[]>): Result<void, string> {
+  const owners = new Map<string, string>();
+  for (const [name, linked] of repos) {
+    const shared = linked.find((repo) => owners.has(repo));
+    if (shared !== undefined) {
+      return err(`repo ${shared} is in products "${owners.get(shared)}" and "${name}"`);
+    }
+    for (const repo of linked) {
+      owners.set(repo, name);
+    }
+  }
+  return ok(undefined);
+}
+
 function parseRepos(entries: JsonObject): Result<Map<string, readonly string[]>, string> {
   const repos = new Map<string, readonly string[]>();
   for (const [name, entry] of Object.entries(entries)) {
@@ -52,7 +74,8 @@ function parseRepos(entries: JsonObject): Result<Map<string, readonly string[]>,
     }
     repos.set(name, linked.value);
   }
-  return ok(repos);
+  const unique = inOneProductEach(repos);
+  return unique.ok ? ok(repos) : unique;
 }
 
 function pairOf(a: string, b: string): RepoPair {
@@ -221,7 +244,11 @@ export interface Unlinked {
   readonly remaining: readonly string[];
 }
 
-function withDeclined(document: JsonObject, products: Products, pairs: readonly RepoPair[]) {
+function withDeclined(
+  document: JsonObject,
+  products: Products,
+  pairs: readonly RepoPair[],
+): JsonObject {
   const added = pairs.filter(([a, b]) => !isDeclinedIn(products, a, b));
   return { ...document, declined: [...products.declined, ...added] };
 }

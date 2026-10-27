@@ -62,3 +62,12 @@ export function loadRegistry<T>(
 export function writeRegistry(fs: FileSystem, file: string, document: JsonObject): void {
   fs.writeAtomic(file, `${JSON.stringify(document, null, 2)}\n`);
 }
+
+// For callers that log a registry problem and carry on: a thrown I/O error becomes an error value.
+export function catchRegistryIo<T>(read: () => Result<T, string>): Result<T, string> {
+  try {
+    return read();
+  } catch (error) {
+    return err(String(error));
+  }
+}

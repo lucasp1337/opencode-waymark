@@ -85,6 +85,13 @@ describe("parseMemoryCommand", () => {
     });
   });
 
+  test("link keeps the product name in lower case", () => {
+    expect(parseMemoryCommand("link Payments")).toEqual({
+      ok: true,
+      value: { name: "link", product: "payments" },
+    });
+  });
+
   test("unlink takes no arguments", () => {
     expect(parseMemoryCommand("unlink")).toEqual({ ok: true, value: { name: "unlink" } });
   });

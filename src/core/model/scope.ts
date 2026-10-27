@@ -50,10 +50,6 @@ export function scopeAt(chain: ScopeChain, level: ScopeLevel): ScopeRef | undefi
 
 // The id of the repo a chain ends in, when its session runs in one.
 export function repoIdIn(chain: ScopeChain): string | undefined {
-  for (const scope of chain) {
-    if (scope.level === "repo") {
-      return scope.id;
-    }
-  }
-  return undefined;
+  const repo = scopeAt(chain, "repo");
+  return repo?.level === "repo" ? repo.id : undefined;
 }

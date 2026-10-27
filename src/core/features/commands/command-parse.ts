@@ -1,7 +1,7 @@
 import { isMemoryId, type MemoryId } from "../../model/id";
 import { err, ok, type Result } from "../../model/result";
 import { isScopeLevel, SCOPE_LEVELS, type ScopeLevel } from "../../model/scope";
-import { isProductName } from "../../scope/products";
+import { productNameOf } from "../../scope/products";
 import type { OrgMerge } from "../../scope/registry";
 
 export type MemoryCommand =
@@ -50,8 +50,9 @@ function parseOrgMerge(words: readonly string[]): Result<MemoryCommand, string> 
 }
 
 function parseLink(words: readonly string[]): Result<MemoryCommand, string> {
-  const [product, ...extra] = words;
-  if (product !== undefined && isProductName(product) && extra.length === 0) {
+  const [typed, ...extra] = words;
+  const product = typed === undefined ? undefined : productNameOf(typed);
+  if (product !== undefined && extra.length === 0) {
     return ok({ name: "link", product });
   }
   return err(`Not linked: expected ${LINK_USAGE}, with a plain name such as payments.`);

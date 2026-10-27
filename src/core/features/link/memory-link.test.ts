@@ -62,6 +62,15 @@ describe("memory_link", () => {
     );
   });
 
+  test("a product name is kept in lower case", async () => {
+    const { link, registry } = setup();
+
+    expect(await link({ repos: [API], product: "Payments" })).toStartWith(
+      `Created product payments with ${API}.`,
+    );
+    expect(registry()).toEqual({ products: { payments: { repos: [API] } } });
+  });
+
   test("a repo listed twice is linked once", async () => {
     const { link, registry } = setup();
 
