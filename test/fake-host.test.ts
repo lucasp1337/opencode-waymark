@@ -27,7 +27,13 @@ describe("FakeHost", () => {
 
     expect(await host.emitSystem("ses_1")).toEqual(["sys"]);
     expect(
-      await host.emitToolAfter({ sessionID: "ses_1", tool: "read", args: {}, touchedPaths: [] }),
+      await host.emitToolAfter({
+        sessionID: "ses_1",
+        tool: "read",
+        args: {},
+        touchedPaths: [],
+        appendable: true,
+      }),
     ).toEqual(["after:read"]);
     expect(await host.emitCompaction("ses_1")).toEqual(["compact"]);
   });

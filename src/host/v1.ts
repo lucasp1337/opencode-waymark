@@ -13,6 +13,7 @@ import { createFileLogger, type Logger, logFilePath } from "../logger";
 import { buildShape, type SchemaBuilder } from "./schema";
 import { summarize } from "./summarize";
 import { commandOf, touchedPaths } from "./tool-args";
+import { appendText, canAppend } from "./tool-output";
 
 type Node = InstanceType<typeof tool.schema.ZodType>;
 
@@ -93,6 +94,8 @@ export interface V1Adapter {
 
 export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
   const registry = emptyRegistry();
+  // chat.message is the only hook that names a session's agent; sessionMeta reports it back.
+  const agents = new Map<string, string>();
 
   const host: HostPort = {
     capabilities: CAPABILITIES,
@@ -113,7 +116,13 @@ export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
         throw new Error(`session ${sessionID} not found`);
       }
       const { id, parentID, directory } = result.data;
-      return parentID === undefined ? { id, directory } : { id, parentID, directory };
+      const agent = agents.get(id);
+      return {
+        id,
+        directory,
+        ...(parentID === undefined ? {} : { parentID }),
+        ...(agent === undefined ? {} : { agent }),
+      };
     },
     toast: async (message, variant = "info") => {
       await input.client.tui.showToast({ body: { message, variant } });
@@ -161,7 +170,15 @@ export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
       "chat.message": (hookInput, output) =>
         guarded("chat.message", async () => {
           trace("chat.message", hookInput, output);
-          const text = output.parts.flatMap((part) => (part.type === "text" ? part.text : []));
+          if (hookInput.agent !== undefined) {
+            agents.set(hookInput.sessionID, hookInput.agent);
+          }
+          // Host-added parts (file mentions, ignored text) are not what the user typed.
+          const text = output.parts.flatMap((part) =>
+            part.type === "text" && part.synthetic !== true && part.ignored !== true
+              ? part.text
+              : [],
+          );
           for (const fn of registry.userMessage) {
             await fn(hookInput.sessionID, text.join("\n"));
           }
@@ -186,10 +203,13 @@ export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
             tool: hookInput.tool,
             args: hookInput.args,
             touchedPaths: touchedPaths(hookInput.args),
+            appendable: canAppend(output),
             ...(command === undefined ? {} : { command }),
           };
           const texts = await collect(registry.toolAfter, call);
-          output.output = [output.output, ...texts].join("\n");
+          if (texts.length > 0) {
+            appendText(output, texts.join("\n"));
+          }
         }),
       "experimental.session.compacting": (hookInput, output) =>
         guarded("compacting", async () => {

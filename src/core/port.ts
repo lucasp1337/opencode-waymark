@@ -36,6 +36,8 @@ export interface ToolCallInfo {
   args: unknown;
   touchedPaths: string[];
   command?: string;
+  // False when the host cannot carry appended text for this call; recall waits for the next one.
+  appendable: boolean;
 }
 
 export interface SessionMeta {

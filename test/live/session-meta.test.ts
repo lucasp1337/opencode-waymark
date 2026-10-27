@@ -26,5 +26,6 @@ describe("sessionMeta", () => {
     expect(String(at(sub, "meta", "parentID"))).toStartWith("ses_");
     expect(at(sub, "meta", "parentID")).not.toBe(at(sub, "meta", "id"));
     expect(at(sub, "ctx", "agent")).toBe("general");
+    expect(at(sub, "meta", "agent")).toBe("general");
   });
 });
