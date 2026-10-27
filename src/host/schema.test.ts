@@ -102,6 +102,7 @@ describe("Waymark's tool schemas", () => {
         "toasts",
       ],
       ["args"],
+      ["repos", "product", "decline"],
     ]);
   });
 });

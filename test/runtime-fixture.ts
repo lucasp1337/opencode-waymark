@@ -12,17 +12,29 @@ import { createFakeHost, type FakeHost } from "./fake-host";
 import { memoryId } from "./memory-id";
 
 const REPO_DIR = "/work/api";
+const WEB_DIR = "/work/web";
 const PLAIN_DIR = "/work/notes";
 export const SESSION = "ses_repo";
+export const WEB_SESSION = "ses_web";
 export const PLAIN_SESSION = "ses_plain";
 // The first id fakeIds hands out; the second ends in 0002, and so on.
 export const FIRST_ID = "01JB8Z6Q4R3M2N1P0V9W8X0001";
 
-// A git with one repository, /work/api, whose origin is github.com/acme/api.
+const ORIGINS = new Map([
+  [REPO_DIR, "git@github.com:Acme/api.git"],
+  [WEB_DIR, "git@github.com:acme/web.git"],
+]);
+
+// Two repositories: /work/api (github.com/acme/api) and /work/web (github.com/acme/web).
 const fakeGit: Git = {
-  root: (dir) =>
-    dir.startsWith(REPO_DIR) ? { status: "found", value: REPO_DIR } : { status: "absent" },
-  originUrl: () => ({ status: "found", value: "git@github.com:Acme/api.git" }),
+  root: (dir) => {
+    const root = [...ORIGINS.keys()].find((repo) => dir === repo || dir.startsWith(`${repo}/`));
+    return root === undefined ? { status: "absent" } : { status: "found", value: root };
+  },
+  originUrl: (root) => {
+    const origin = ORIGINS.get(root);
+    return origin === undefined ? { status: "absent" } : { status: "found", value: origin };
+  },
 };
 
 interface FakeClock {
@@ -82,6 +94,7 @@ function embedderFor(setup: RuntimeSetup): Promise<Embedder> {
 function start(activation: Activation): RuntimeFixture {
   const host = createFakeHost(activation.setup.capabilities);
   host.sessions.set(SESSION, { id: SESSION, directory: REPO_DIR });
+  host.sessions.set(WEB_SESSION, { id: WEB_SESSION, directory: WEB_DIR });
   host.sessions.set(PLAIN_SESSION, { id: PLAIN_SESSION, directory: PLAIN_DIR });
   const { dataDir, clock, newId } = activation;
   const runtime = createRuntime(host, {

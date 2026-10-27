@@ -182,6 +182,7 @@ const TOOLS = [
   "memory_forget",
   "memory_config",
   "memory_command",
+  "memory_link",
 ];
 
 const tempDir = useTempDirs();

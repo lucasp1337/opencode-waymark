@@ -7,6 +7,7 @@ import { compactionNote } from "./features/lifecycle/compaction";
 import { DEFAULT_LIFECYCLE } from "./features/lifecycle/lifecycle-settings";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
 import { createReviewSignals } from "./features/lifecycle/review-signals";
+import { memoryLinkTool } from "./features/link/memory-link";
 import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
 import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
@@ -113,7 +114,7 @@ function commandToolDeps(wiring: Wiring, toolDeps: ToolDeps): MemoryCommandDeps 
 }
 
 function registerTools(wiring: Wiring): void {
-  const { host, store, counters, config } = wiring;
+  const { host, deps, store, counters, config, registryFile } = wiring;
   const toolDeps = toolDepsOf(wiring);
   const tools = [
     memorySaveTool(toolDeps),
@@ -123,6 +124,7 @@ function registerTools(wiring: Wiring): void {
     memoryForgetTool(toolDeps),
     memoryConfigTool({ config }),
     memoryCommandTool(commandToolDeps(wiring, toolDeps)),
+    memoryLinkTool({ fs: deps.fs, registryFile }),
   ];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool));
