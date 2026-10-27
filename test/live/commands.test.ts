@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { at, type Json, type LiveEnv, liveEnvWithWaymark, parseJson } from "./harness";
 import { seedMemory } from "./seed";
@@ -79,6 +79,25 @@ describe("registerCommand: Waymark's commands", () => {
       existsSync(waymarkFile(env, "repos", "github.com/acme/api", "fact", `${FACT_ID}.md`)),
     ).toBe(true);
     expect(existsSync(waymarkFile(env, "user", "fact", `${FACT_ID}.md`))).toBe(false);
+  });
+
+  test("/memory org merge records the merged org as an alias", async () => {
+    const env = liveEnvWithWaymark();
+    mkdirSync(waymarkFile(env), { recursive: true });
+    writeFileSync(
+      waymarkFile(env, "registry.json"),
+      JSON.stringify({
+        orgs: {
+          "github.com/acme": { owner: "acme" },
+          "github.com/acme-labs": { owner: "acme-labs" },
+        },
+      }),
+    );
+
+    await env.run("org merge github.com/acme github.com/acme-labs", ["--command", "memory"]);
+
+    const registry = parseJson(readFileSync(waymarkFile(env, "registry.json"), "utf8"));
+    expect(at(registry, "aliases", "github.com/acme-labs")).toBe("github.com/acme");
   });
 
   test("/memory setup with Quick and Lean writes the Lean preset", async () => {

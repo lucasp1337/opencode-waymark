@@ -2,11 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { createFakeHost, type FakeHost } from "../../../test/fake-host";
 import { useTempDirs } from "../../../test/temp-dir";
-import { nodeFileSystem } from "../store/fs";
+import { type FileSystem, nodeFileSystem } from "../store/fs";
 import type { Git, GitAnswer } from "./git";
+import { recordMerge, resolveOrg } from "./registry";
 import { createSessionScopes, type SessionScopes } from "./session-scopes";
 
 const tempDir = useTempDirs();
+
+function writeRegistry(file: string, content: unknown): void {
+  nodeFileSystem.writeAtomic(file, JSON.stringify(content));
+}
 
 const found = (value: string): GitAnswer => ({ status: "found", value });
 const ORIGIN = found("git@github.com:acme/api.git");
@@ -115,6 +120,79 @@ describe("createSessionScopes", () => {
     await scopesFor(host, gitAnswering(found("/work/api")), registryFile).chainFor("ses_a");
 
     expect(host.toasts).toEqual([]);
-    expect(host.logs.map((entry) => entry.msg)).toEqual(["org not registered"]);
+    expect(host.logs.map((entry) => entry.msg)).toEqual(["org registry not applied"]);
+  });
+
+  test("an org merged into another resolves to the other", async () => {
+    const registryFile = join(tempDir(), "registry.json");
+    writeRegistry(registryFile, {
+      orgs: { "github.com/acme": { owner: "acme" }, "github.com/umbrella": { owner: "umbrella" } },
+      aliases: { "github.com/acme": "github.com/umbrella" },
+    });
+    const host = hostWith({ ses_a: "/work/api" });
+
+    const chain = await scopesFor(host, gitAnswering(found("/work/api")), registryFile).chainFor(
+      "ses_a",
+    );
+
+    expect(chain).toEqual([
+      { level: "user" },
+      { level: "org", id: "github.com/umbrella" },
+      { level: "repo", id: "github.com/acme/api" },
+    ]);
+  });
+
+  test("a merge recorded after the chain was cached applies to the next call", async () => {
+    const registryFile = join(tempDir(), "registry.json");
+    const host = hostWith({ ses_a: "/work/api" });
+    const scopes = scopesFor(host, gitAnswering(found("/work/api")), registryFile);
+    await scopes.chainFor("ses_a");
+    resolveOrg(nodeFileSystem, registryFile, { id: "github.com/umbrella", owner: "umbrella" });
+    recordMerge(nodeFileSystem, registryFile, {
+      into: "github.com/umbrella",
+      from: "github.com/acme",
+    });
+
+    expect(await scopes.chainFor("ses_a")).toContainEqual({
+      level: "org",
+      id: "github.com/umbrella",
+    });
+  });
+
+  test("an org that was merged away is not announced as new", async () => {
+    const registryFile = join(tempDir(), "registry.json");
+    writeRegistry(registryFile, { aliases: { "github.com/acme": "github.com/umbrella" } });
+    const host = hostWith({ ses_a: "/work/api" });
+
+    await scopesFor(host, gitAnswering(found("/work/api")), registryFile).chainFor("ses_a");
+
+    expect(host.toasts).toEqual([]);
+  });
+
+  test("a registry that cannot be read logs once and leaves the chain as git found it", async () => {
+    const host = hostWith({ ses_a: "/work/api" });
+    const unreadable: FileSystem = {
+      ...nodeFileSystem,
+      readText() {
+        throw new Error("EACCES: permission denied");
+      },
+    };
+    const scopes = createSessionScopes({
+      host,
+      git: gitAnswering(found("/work/api")),
+      fs: unreadable,
+      registryFile: join(tempDir(), "registry.json"),
+    });
+
+    const chain = await scopes.chainFor("ses_a");
+
+    expect(chain).toContainEqual({ level: "org", id: "github.com/acme" });
+    expect(host.logs).toEqual([
+      {
+        level: "warn",
+        msg: "org registry not applied",
+        data: { org: "github.com/acme", error: "Error: EACCES: permission denied" },
+      },
+    ]);
   });
 });

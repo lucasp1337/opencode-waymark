@@ -6,11 +6,11 @@ import type { JsonSchemaObject, ToolDef } from "../../port";
 import type { ToolDeps } from "../tool-deps";
 import { type MemoryCommand, parseMemoryCommand } from "./command-parse";
 import { listChain } from "./list-chain";
+import { type MergeDeps, mergeOrgs } from "./merge-orgs";
 import { moveMemory } from "./move-memory";
-import type { RelocationDeps } from "./relocation";
 import { type ReviewSignals, reviewReport } from "./review-report";
 
-export interface MemoryCommandDeps extends RelocationDeps, Pick<ToolDeps, "scopes"> {
+export interface MemoryCommandDeps extends MergeDeps, Pick<ToolDeps, "scopes"> {
   readonly reviewSignals: (chain: ScopeChain) => ReviewSignals;
 }
 
@@ -37,6 +37,9 @@ async function runCommand(
   command: MemoryCommand,
   sessionID: string,
 ): Promise<string> {
+  if (command.name === "org-merge") {
+    return await mergeOrgs(deps, command.merge);
+  }
   const chain = await deps.scopes.chainFor(sessionID);
   switch (command.name) {
     case "list":
@@ -65,7 +68,7 @@ export function memoryCommandTool(deps: MemoryCommandDeps): ToolDef {
   return {
     name: "memory_command",
     description:
-      "Runs a /memory subcommand: list the memories of this session's scopes, review, or move a memory to another scope. Pass the user's arguments exactly as typed. Call only when the user ran /memory.",
+      "Runs a /memory subcommand: list the memories of this session's scopes, review, move a memory to another scope, or merge two orgs. Pass the user's arguments exactly as typed. Call only when the user ran /memory.",
     inputSchema: INPUT_SCHEMA,
     execute: (input, ctx) => commandReply(deps, input, ctx.sessionID),
   };

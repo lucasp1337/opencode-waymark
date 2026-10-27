@@ -83,6 +83,7 @@ interface Wiring extends Resources {
   readonly deps: RuntimeDeps;
   readonly config: ConfigStore;
   readonly scopes: SessionScopes;
+  readonly registryFile: string;
 }
 
 function registerTools(wiring: Wiring): void {
@@ -112,7 +113,12 @@ function registerTools(wiring: Wiring): void {
     memorySearchTool(toolDeps),
     memoryForgetTool(toolDeps),
     memoryConfigTool({ config }),
-    memoryCommandTool({ ...toolDeps, reviewSignals }),
+    memoryCommandTool({
+      ...toolDeps,
+      fs: deps.fs,
+      registryFile: wiring.registryFile,
+      reviewSignals,
+    }),
   ];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool));
@@ -205,7 +211,7 @@ function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void 
   const host = withToastSetting(rawHost, () => config.current().toasts);
   const registryFile = join(deps.dataDir, "registry.json");
   const scopes = createSessionScopes({ host, git: deps.git, fs: deps.fs, registryFile });
-  const wiring = { host, deps, ...resources, config, scopes };
+  const wiring = { host, deps, ...resources, config, scopes, registryFile };
   registerTools(wiring);
   registerRecall(wiring);
 }

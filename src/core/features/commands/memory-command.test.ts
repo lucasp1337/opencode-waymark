@@ -459,6 +459,7 @@ describe("memory_command usage", () => {
 
     expect(reply).toStartWith("Subcommands of /memory:");
     expect(reply).toContain("/memory setup");
+    expect(reply).toContain("/memory org merge");
   });
 
   test("a malformed move gets its own usage and nothing moves", async () => {

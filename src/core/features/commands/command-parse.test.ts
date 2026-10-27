@@ -31,6 +31,16 @@ describe("parseMemoryCommand", () => {
     expect(parseMemoryCommand(`move [${ID} org`).ok).toBe(false);
   });
 
+  test("org merge names the org to keep first and the org to merge second", () => {
+    expect(parseMemoryCommand("org merge github.com/acme github.com/acme-labs")).toEqual({
+      ok: true,
+      value: {
+        name: "org-merge",
+        merge: { into: "github.com/acme", from: "github.com/acme-labs" },
+      },
+    });
+  });
+
   test.each([
     ["an unknown subcommand", "frobnicate"],
     ["setup, which the command template handles", "setup"],
@@ -53,5 +63,17 @@ describe("parseMemoryCommand", () => {
     expect(!parsed.ok && parsed.error).toStartWith(
       "Not moved: expected /memory move <id> <user|org|product|repo>",
     );
+  });
+
+  test.each([
+    ["only the verb", "org merge"],
+    ["one org", "org merge github.com/acme"],
+    ["three orgs", "org merge a b c"],
+    ["another verb", "org split a b"],
+    ["no verb", "org"],
+  ])("org with %s is refused with its usage", (_case, args) => {
+    const parsed = parseMemoryCommand(args);
+
+    expect(!parsed.ok && parsed.error).toStartWith("Not merged: expected /memory org merge");
   });
 });

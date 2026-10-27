@@ -16,9 +16,11 @@ import { useTempDirs } from "./temp-dir";
 import { validContent } from "./valid-content";
 
 export const API_SESSION = "ses_api";
+export const WEB_SESSION = "ses_web";
 export const NOTES_SESSION = "ses_notes";
 
 export const ACME_ORG = { level: "org", id: "github.com/acme" } as const satisfies ScopeRef;
+export const LABS_ORG = { level: "org", id: "github.com/acme-labs" } as const satisfies ScopeRef;
 export const API_REPO: ScopeRef = { level: "repo", id: "github.com/acme/api" };
 export const USER: ScopeRef = { level: "user" };
 
@@ -27,15 +29,18 @@ const SEEDED_AT = new Date("2026-03-01T10:00:00.000Z");
 export const COMMAND_TIME = new Date("2026-03-02T10:00:00.000Z");
 
 // Small, so a budget test needs only a few lines of text.
-const COMMAND_CAPS: BudgetCaps = { user: 50, org: 50, product: 50, repo: 50 };
+export const COMMAND_CAPS: BudgetCaps = { user: 50, org: 50, product: 50, repo: 50 };
 
-const ORIGINS = new Map([["/work/api", "git@github.com:acme/api.git"]]);
+const ORIGINS = new Map([
+  ["/work/api", "git@github.com:acme/api.git"],
+  ["/work/web", "git@github.com:acme-labs/web.git"],
+]);
 
 function found(value: string): GitAnswer {
   return { status: "found", value };
 }
 
-// /work/api is in the acme org, /work/notes is not a repository.
+// /work/api is in the acme org, /work/web in acme-labs, /work/notes is not a repository.
 const fakeGit: Git = {
   root: (dir) => (ORIGINS.has(dir) ? found(dir) : { status: "absent" }),
   originUrl: (root) => {
@@ -61,8 +66,13 @@ export interface CommandFixture {
   readonly store: MemoryStore;
   readonly scopes: SessionScopes;
   readonly dataDir: string;
+  readonly registryFile: string;
   seed(spec: SeedSpec): Memory;
   run(args: string, sessionID?: string): Promise<string>;
+  // A new activation over the same data: its own host and scopes, as in a later session.
+  laterScopes(): { host: FakeHost; scopes: SessionScopes };
+  // Resolves both repos once, so their orgs are in the registry.
+  knowBothOrgs(): Promise<void>;
 }
 
 interface CommandSetup {
@@ -71,6 +81,7 @@ interface CommandSetup {
 
 function sessionsFor(host: FakeHost): void {
   host.sessions.set(API_SESSION, { id: API_SESSION, directory: "/work/api" });
+  host.sessions.set(WEB_SESSION, { id: WEB_SESSION, directory: "/work/web" });
   host.sessions.set(NOTES_SESSION, { id: NOTES_SESSION, directory: "/work/notes" });
 }
 
@@ -91,7 +102,9 @@ export function useCommandFixture(setup: CommandSetup = {}): () => CommandFixtur
     sessionsFor(host);
     const { store } = openMemoryStore(dataDir, nodeFileSystem);
     stores.push(store);
-    const scopes = createSessionScopes({ host, git: fakeGit, fs: nodeFileSystem, registryFile });
+    const scopesOn = (activation: FakeHost) =>
+      createSessionScopes({ host: activation, git: fakeGit, fs: nodeFileSystem, registryFile });
+    const scopes = scopesOn(host);
     const signals = setup.reviewSignals ?? { leftIndex: [], noisy: [] };
     const tool = memoryCommandTool({
       host,
@@ -99,6 +112,8 @@ export function useCommandFixture(setup: CommandSetup = {}): () => CommandFixtur
       scopes,
       now: () => COMMAND_TIME,
       caps: () => COMMAND_CAPS,
+      fs: nodeFileSystem,
+      registryFile,
       reviewSignals: () => signals,
     });
     host.registerTool(tool);
@@ -107,6 +122,7 @@ export function useCommandFixture(setup: CommandSetup = {}): () => CommandFixtur
       store,
       scopes,
       dataDir,
+      registryFile,
       seed: (spec) => {
         const origin = {
           id: idNumber(spec.n),
@@ -119,6 +135,15 @@ export function useCommandFixture(setup: CommandSetup = {}): () => CommandFixtur
         return memory;
       },
       run: (args, sessionID = API_SESSION) => host.callTool("memory_command", { args }, sessionID),
+      laterScopes: () => {
+        const later = createFakeHost();
+        sessionsFor(later);
+        return { host: later, scopes: scopesOn(later) };
+      },
+      knowBothOrgs: async () => {
+        await scopes.chainFor(API_SESSION);
+        await scopes.chainFor(WEB_SESSION);
+      },
     };
   };
 }
