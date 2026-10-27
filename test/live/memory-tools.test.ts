@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { newMemory } from "../../src/core/model/memory";
 import { nodeFileSystem } from "../../src/core/store/fs";
@@ -69,5 +69,18 @@ describe("memory store in a real opencode process", () => {
 
     expect(probeLines(env, "hook failed")).toEqual([]);
     expect(probeLines(env, "activation failed")).toEqual([]);
+  });
+});
+
+describe("memory tools through the agent", () => {
+  test("memory_save called by the agent writes a user memory file", async () => {
+    const env = waymarkEnv();
+
+    await env.run(
+      "Call the memory_save tool once with kind fact, scope user, title Staging resets nightly, body All data is wiped at 02:00. Then say DONE.",
+    );
+
+    const factDir = join(env.dataHome, "waymark", "user", "fact");
+    expect(existsSync(factDir) ? readdirSync(factDir) : []).toHaveLength(1);
   });
 });

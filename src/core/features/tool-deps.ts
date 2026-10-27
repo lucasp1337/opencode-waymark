@@ -1,10 +1,15 @@
+import type { MemoryId } from "../model/id";
 import type { HostPort } from "../port";
 import type { SessionScopes } from "../scope/session-scopes";
 import type { MemoryStore } from "../store/memory-store";
+import type { BudgetCaps } from "./save/budget";
 
 // Everything the memory tools need, injected by the runtime.
 export interface ToolDeps {
   readonly host: Pick<HostPort, "capabilities" | "toast" | "log">;
   readonly store: MemoryStore;
   readonly scopes: SessionScopes;
+  readonly now: () => Date;
+  readonly newId: () => MemoryId;
+  readonly caps: BudgetCaps;
 }

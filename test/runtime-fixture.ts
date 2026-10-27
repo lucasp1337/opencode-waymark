@@ -12,7 +12,7 @@ import { memoryId } from "./memory-id";
 const REPO_DIR = "/work/api";
 const PLAIN_DIR = "/work/notes";
 export const SESSION = "ses_repo";
-const PLAIN_SESSION = "ses_plain";
+export const PLAIN_SESSION = "ses_plain";
 // The first id fakeIds hands out; the second ends in 0002, and so on.
 export const FIRST_ID = "01JB8Z6Q4R3M2N1P0V9W8X0001";
 

@@ -6,7 +6,7 @@ export interface Capabilities {
 }
 
 export type JsonSchema =
-  | { type: "string"; description?: string; enum?: string[] }
+  | { type: "string"; description?: string; enum?: readonly string[] }
   | { type: "number" | "boolean"; description?: string }
   | { type: "array"; items: JsonSchema; description?: string }
   | JsonSchemaObject;

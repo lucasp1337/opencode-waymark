@@ -39,6 +39,12 @@ export interface Origin {
   readonly supersedes?: MemoryId;
 }
 
+// A superseded memory is no longer delivered; its file stays readable and searchable.
+export function activeOnly(memories: readonly Memory[]): Memory[] {
+  const superseded = new Set(memories.flatMap((memory) => memory.supersedes ?? []));
+  return memories.filter((memory) => !superseded.has(memory.id));
+}
+
 export function newMemory(content: ValidContent, origin: Origin): Memory {
   const stamp = origin.now.toISOString();
   return {

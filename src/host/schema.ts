@@ -13,7 +13,7 @@ export interface SchemaBuilder<T> {
 
 export class UnsupportedSchemaError extends Error {}
 
-function buildEnum<T>(values: string[], builder: SchemaBuilder<T>): T {
+function buildEnum<T>(values: readonly string[], builder: SchemaBuilder<T>): T {
   const [first, ...rest] = values;
   if (first === undefined) {
     throw new UnsupportedSchemaError("enum needs at least one value");

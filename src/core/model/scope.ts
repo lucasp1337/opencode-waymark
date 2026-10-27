@@ -1,6 +1,6 @@
 import { err, ok, type Result } from "./result";
 
-const SCOPE_LEVELS = ["user", "org", "product", "repo"] as const;
+export const SCOPE_LEVELS = ["user", "org", "product", "repo"] as const;
 
 export type ScopeLevel = (typeof SCOPE_LEVELS)[number];
 
