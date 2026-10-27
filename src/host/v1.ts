@@ -240,13 +240,13 @@ function sessionEventOf(event: Parameters<NonNullable<Hooks["event"]>>[0]["event
   }
 }
 
-export const server: Plugin = (input) => {
+export const server: Plugin = (input, options) => {
   const logger = createFileLogger(logFilePath(process.env), () => new Date());
   logger.log("info", "plugin loaded", {
     inputKeys: Object.keys(input),
     directory: input.directory,
   });
   const adapter = createV1Adapter(input, logger);
-  adapter.onDispose(activate(adapter.host, systemDeps(process.env)).dispose);
+  adapter.onDispose(activate(adapter.host, { ...systemDeps(process.env), options }).dispose);
   return Promise.resolve(adapter.hooks());
 };

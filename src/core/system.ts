@@ -7,7 +7,7 @@ import { nodeFileSystem } from "./store/fs";
 import { dataRoot } from "./store/layout";
 
 // The real clock, file system, git and id source; tests inject their own.
-export function systemDeps(env: Record<string, string | undefined>): RuntimeDeps {
+export function systemDeps(env: Record<string, string | undefined>): Omit<RuntimeDeps, "options"> {
   const nextUlid = monotonicFactory();
   const now = () => new Date();
   const newId = (): MemoryId => {

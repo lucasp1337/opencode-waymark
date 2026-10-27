@@ -60,6 +60,7 @@ interface Activation {
   readonly clock: FakeClock;
   readonly newId: () => MemoryId;
   readonly started: RuntimeFixture[];
+  readonly options: unknown;
 }
 
 function start(activation: Activation): RuntimeFixture {
@@ -73,6 +74,7 @@ function start(activation: Activation): RuntimeFixture {
     git: fakeGit,
     now: clock.now,
     newId,
+    options: activation.options,
   });
   const fixture: RuntimeFixture = {
     host,
@@ -89,8 +91,8 @@ function start(activation: Activation): RuntimeFixture {
 }
 
 // Runtimes over a fresh temp data dir with a fake clock and fake ids, disposed and deleted after
-// each test.
-export function useRuntime(): () => RuntimeFixture {
+// each test. `options` are the plugin options every runtime of this test file gets.
+export function useRuntime(options?: unknown): () => RuntimeFixture {
   const started: RuntimeFixture[] = [];
   afterEach(() => {
     for (const fixture of started.splice(0)) {
@@ -104,5 +106,6 @@ export function useRuntime(): () => RuntimeFixture {
       clock: fakeClock(),
       newId: fakeIds(),
       started,
+      options,
     });
 }

@@ -6,9 +6,6 @@ import { alwaysOnText } from "../recall/always-on";
 
 export type BudgetCaps = { readonly [L in ScopeLevel]: number };
 
-// Token caps per scope for the always-on kinds.
-export const BALANCED_CAPS: BudgetCaps = { user: 400, org: 600, product: 300, repo: 600 };
-
 const CHARS_PER_TOKEN = 4;
 
 // Measured on the text the session block shows, so the cap bounds what the agent reads.

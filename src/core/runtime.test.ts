@@ -124,6 +124,7 @@ describe("activate", () => {
       git: processGit,
       now: () => new Date(0),
       newId: () => memoryId(ID),
+      options: undefined,
     });
 
     expect(host.logs.map((entry) => entry.msg)).toEqual(["activation failed"]);
