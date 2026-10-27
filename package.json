@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@opencode-ai/plugin": "1.19.4",
+    "ulid": "3.0.2",
     "yaml": "2.9.1"
   },
   "devDependencies": {

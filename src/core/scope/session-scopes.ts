@@ -11,7 +11,7 @@ export interface SessionScopes {
 }
 
 interface SessionScopeDeps {
-  readonly host: Pick<HostPort, "sessionMeta" | "toast" | "log">;
+  readonly host: Pick<HostPort, "capabilities" | "sessionMeta" | "toast" | "log">;
   readonly git: Git;
   readonly fs: FileSystem;
   readonly registryFile: string;

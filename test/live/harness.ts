@@ -66,6 +66,8 @@ export interface RunResult {
 export interface LiveEnv {
   configDir: string;
   workDir: string;
+  // XDG_DATA_HOME of the sandbox; Waymark keeps its data in <dataHome>/waymark.
+  dataHome: string;
   logFile: string;
   installPlugin(name: string, source: string): void;
   run(prompt: string, extraArgs?: string[]): Promise<RunResult>;
@@ -106,6 +108,7 @@ export function createLiveEnv(): LiveEnv {
   return {
     configDir: dirs.config,
     workDir: dirs.work,
+    dataHome: dirs.data,
     logFile,
     installPlugin(name, source) {
       symlinkSync(resolve(REPO_ROOT, source), join(dirs.config, "plugin", `${name}.ts`));

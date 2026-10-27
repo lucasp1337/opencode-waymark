@@ -7,6 +7,8 @@ import type {
   ToolCallInfo,
   ToolDef,
 } from "../core/port";
+import { activate } from "../core/runtime";
+import { systemDeps } from "../core/system";
 import { createFileLogger, type Logger, logFilePath } from "../logger";
 import { buildShape, type SchemaBuilder } from "./schema";
 import { summarize } from "./summarize";
@@ -42,6 +44,7 @@ interface Registry {
   toolAfter: Array<(call: ToolCallInfo) => Promise<string | null>>;
   sessionEvent: Array<(e: SessionEvent) => Promise<void>>;
   compaction: Array<(sessionID: string) => Promise<string | null>>;
+  dispose: Array<() => void>;
 }
 
 function emptyRegistry(): Registry {
@@ -53,6 +56,7 @@ function emptyRegistry(): Registry {
     toolAfter: [],
     sessionEvent: [],
     compaction: [],
+    dispose: [],
   };
 }
 
@@ -83,6 +87,7 @@ async function collect<A extends unknown[]>(
 
 export interface V1Adapter {
   host: HostPort;
+  onDispose(fn: () => void): void;
   hooks(): Hooks;
 }
 
@@ -134,6 +139,7 @@ export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
 
   return {
     host,
+    onDispose: (fn) => registry.dispose.push(fn),
     hooks: () => ({
       tool: registry.tools,
       config: (config) =>
@@ -193,6 +199,9 @@ export function createV1Adapter(input: PluginInput, logger: Logger): V1Adapter {
       dispose: () =>
         guarded("dispose", () => {
           trace("dispose", {}, {});
+          for (const fn of registry.dispose) {
+            fn();
+          }
         }),
     }),
   };
@@ -217,5 +226,7 @@ export const server: Plugin = (input) => {
     inputKeys: Object.keys(input),
     directory: input.directory,
   });
-  return Promise.resolve(createV1Adapter(input, logger).hooks());
+  const adapter = createV1Adapter(input, logger);
+  adapter.onDispose(activate(adapter.host, systemDeps(process.env)).dispose);
+  return Promise.resolve(adapter.hooks());
 };

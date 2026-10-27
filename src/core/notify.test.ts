@@ -26,3 +26,19 @@ describe("notify", () => {
     ]);
   });
 });
+
+describe("notify without toast support", () => {
+  test("skips the toast when the host has none", async () => {
+    const host = createFakeHost({
+      systemInjection: true,
+      toolOutputMutation: true,
+      compactionHook: true,
+      toast: false,
+    });
+
+    await notify(host, "waymark · hi");
+
+    expect(host.toasts).toEqual([]);
+    expect(host.logs).toEqual([]);
+  });
+});

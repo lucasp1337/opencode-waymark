@@ -1,10 +1,14 @@
 import type { HostPort } from "./port";
 
-// Toasts are best-effort: headless runs have no TUI, and a lost toast must never fail a save.
+// Toasts are best-effort: a host may have none, headless runs show nothing, and a lost toast must
+// never fail a save.
 export async function notify(
-  host: Pick<HostPort, "toast" | "log">,
+  host: Pick<HostPort, "capabilities" | "toast" | "log">,
   message: string,
 ): Promise<void> {
+  if (!host.capabilities.toast) {
+    return;
+  }
   try {
     await host.toast(message, "info");
   } catch (error) {
