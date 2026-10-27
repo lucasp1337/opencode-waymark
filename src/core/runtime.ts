@@ -1,10 +1,13 @@
 import { join } from "node:path";
 import { guardedTool } from "./features/guarded-tool";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
+import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
 import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
+import { memorySearchTool } from "./features/recall/memory-search";
 import { PRESETS } from "./features/recall/presets";
 import { createRecallScopes } from "./features/recall/recall-scope";
+import { createRetriever } from "./features/recall/retriever";
 import { createSessionBlocks } from "./features/recall/session-blocks";
 import { memorySaveTool } from "./features/save/memory-save";
 import { memoryUpdateTool } from "./features/save/memory-update";
@@ -15,8 +18,10 @@ import type { HostPort } from "./port";
 import type { Git } from "./scope/git";
 import { createSessionScopes, type SessionScopes } from "./scope/session-scopes";
 import type { SyncReport } from "./store/cache";
+import type { Embedder } from "./store/embedder";
 import type { FileSystem } from "./store/fs";
 import { type MemoryStore, openMemoryStore } from "./store/memory-store";
+import { openVectorIndex, type VectorIndex } from "./store/vector-index";
 
 export interface RuntimeDeps {
   readonly dataDir: string;
@@ -24,6 +29,8 @@ export interface RuntimeDeps {
   readonly git: Git;
   readonly now: () => Date;
   readonly newId: () => MemoryId;
+  // Loads the local embedding model; called at most once, on the first search.
+  readonly loadEmbedder: () => Promise<Embedder>;
   // The plugin options from the user's opencode config, unparsed.
   readonly options: unknown;
 }
@@ -45,14 +52,20 @@ function logOpening(host: HostPort, report: SyncReport, cacheReset: string | und
   }
 }
 
-interface Wiring {
+// What one activation opens and must release again.
+interface Resources {
+  readonly store: MemoryStore;
+  readonly vectors: VectorIndex;
+  readonly embedder: LazyEmbedder;
+}
+
+interface Wiring extends Resources {
   readonly host: HostPort;
   readonly deps: RuntimeDeps;
-  readonly store: MemoryStore;
   readonly scopes: SessionScopes;
 }
 
-function registerTools({ host, deps, store, scopes }: Wiring): void {
+function registerTools({ host, deps, store, vectors, embedder, scopes }: Wiring): void {
   const toolDeps: ToolDeps = {
     host,
     store,
@@ -60,8 +73,15 @@ function registerTools({ host, deps, store, scopes }: Wiring): void {
     now: deps.now,
     newId: deps.newId,
     caps: PRESET.caps,
+    retriever: createRetriever({ store, vectors, embedder, log: host.log }),
   };
-  const tools = [memorySaveTool, memoryUpdateTool, memoryReadTool, memoryForgetTool];
+  const tools = [
+    memorySaveTool,
+    memoryUpdateTool,
+    memoryReadTool,
+    memorySearchTool,
+    memoryForgetTool,
+  ];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool(toolDeps)));
   }
@@ -104,14 +124,14 @@ function registerRecall({ host, deps, store, scopes }: Wiring): void {
   });
 }
 
-function wire(host: HostPort, deps: RuntimeDeps, store: MemoryStore): void {
+function wire(host: HostPort, deps: RuntimeDeps, resources: Resources): void {
   const scopes = createSessionScopes({
     host,
     git: deps.git,
     fs: deps.fs,
     registryFile: join(deps.dataDir, "registry.json"),
   });
-  const wiring = { host, deps, store, scopes };
+  const wiring = { host, deps, ...resources, scopes };
   registerTools(wiring);
   registerRecall(wiring);
 }
@@ -120,10 +140,20 @@ function wire(host: HostPort, deps: RuntimeDeps, store: MemoryStore): void {
 export function createRuntime(host: HostPort, deps: RuntimeDeps): Runtime {
   const { store, report, cacheReset } = openMemoryStore(deps.dataDir, deps.fs);
   logOpening(host, report, cacheReset);
+  const open: Array<{ close(): void }> = [store];
   try {
-    wire(host, deps, store);
+    const { index: vectors, reset } = openVectorIndex(join(deps.dataDir, "vectors.sqlite"));
+    open.push(vectors);
+    if (reset !== undefined) {
+      host.log("warn", "vector cache recreated", { reason: reset });
+    }
+    const embedder = createLazyEmbedder(deps.loadEmbedder, host.log);
+    open.push(embedder);
+    wire(host, deps, { store, vectors, embedder });
   } catch (error) {
-    store.close();
+    for (const resource of open) {
+      resource.close();
+    }
     throw error;
   }
   let disposed = false;
@@ -131,7 +161,9 @@ export function createRuntime(host: HostPort, deps: RuntimeDeps): Runtime {
     dispose() {
       if (!disposed) {
         disposed = true;
-        store.close();
+        for (const resource of open) {
+          resource.close();
+        }
         host.log("info", "runtime disposed");
       }
     },

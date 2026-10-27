@@ -111,14 +111,14 @@ describe("openMemoryStore", () => {
     const first = openStore(root).store;
     first.save(fixture(1));
     first.save(fixture(2, REPO));
-    const expected = titles(first.related("deploy", CHAIN, 3));
+    const expected = titles(first.related({ text: "deploy", scopes: CHAIN, limit: 3 }));
     first.close();
     rmSync(join(root, "cache.sqlite"));
 
     const { store, report } = openStore(root);
 
     expect(report.indexed).toBe(2);
-    expect(titles(store.related("deploy", CHAIN, 3))).toEqual(expected);
+    expect(titles(store.related({ text: "deploy", scopes: CHAIN, limit: 3 }))).toEqual(expected);
     expect(store.get(fixture(1).id)).toEqual(fixture(1));
   });
 
@@ -193,7 +193,9 @@ describe("save", () => {
 
     store.save(fixture(1));
 
-    expect(titles(store.related("deploy", CHAIN, 3))).toEqual(["Memory 1"]);
+    expect(titles(store.related({ text: "deploy", scopes: CHAIN, limit: 3 }))).toEqual([
+      "Memory 1",
+    ]);
   });
 
   test("saving the same memory again updates it in place", () => {
@@ -321,7 +323,7 @@ describe("forget", () => {
     store.forget(fixture(1));
 
     expect(store.get(fixture(1).id)).toBeUndefined();
-    expect(store.related("deploy", CHAIN, 3)).toEqual([]);
+    expect(store.related({ text: "deploy", scopes: CHAIN, limit: 3 })).toEqual([]);
     expect(memoryFiles(root).listPaths()).toEqual([]);
   });
 

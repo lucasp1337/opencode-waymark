@@ -3,7 +3,8 @@ import { join } from "node:path";
 import type { MemoryId } from "../model/id";
 import type { Memory } from "../model/memory";
 import type { ScopeChain } from "../model/scope";
-import { isUnusableCache, type MemoryCache, openSyncedCache, type SyncReport } from "./cache";
+import { type MemoryCache, openSyncedCache, type RelatedQuery, type SyncReport } from "./cache";
+import { isUnusableCache } from "./derived-database";
 import type { FileSystem } from "./fs";
 import { memoryPath } from "./layout";
 import { createMemoryFiles } from "./memory-files";
@@ -26,7 +27,7 @@ export interface MemoryStore {
   forget(memory: Memory): void;
   get(id: MemoryId): Memory | undefined;
   inScopes(scopes: ScopeChain): Memory[];
-  related(text: string, scopes: ScopeChain, limit: number): Memory[];
+  related(query: RelatedQuery): Memory[];
   // Changes after every save and forget, so readers can tell when what they cached is stale.
   generation(): number;
   close(): void;
@@ -82,7 +83,7 @@ export function openMemoryStore(
     },
     get: (id) => cache.get(id)?.memory,
     inScopes: (scopes) => cache.inScopes(scopes),
-    related: (text, scopes, limit) => cache.related(text, scopes, limit),
+    related: (query) => cache.related(query),
     generation: () => generation,
     close: () => cache.close(),
   };

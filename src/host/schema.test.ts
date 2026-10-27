@@ -89,6 +89,7 @@ describe("Waymark's tool schemas", () => {
       ["kind", "scope", "title", "body", "why", "triggers", "relation"],
       ["id", "title", "body", "why", "triggers"],
       ["id"],
+      ["query", "kinds", "scopes"],
       ["id"],
     ]);
   });

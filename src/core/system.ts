@@ -1,5 +1,7 @@
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { monotonicFactory } from "ulid";
+import { loadTransformersEmbedder } from "./features/recall/embeddings/transformers-embedder";
 import { isMemoryId, type MemoryId } from "./model/id";
 import type { RuntimeDeps } from "./runtime";
 import { processGit } from "./scope/git";
@@ -17,5 +19,13 @@ export function systemDeps(env: Record<string, string | undefined>): Omit<Runtim
     }
     return id;
   };
-  return { dataDir: dataRoot(env, homedir()), fs: nodeFileSystem, git: processGit, now, newId };
+  const dataDir = dataRoot(env, homedir());
+  return {
+    dataDir,
+    fs: nodeFileSystem,
+    git: processGit,
+    now,
+    newId,
+    loadEmbedder: () => loadTransformersEmbedder(join(dataDir, "models")),
+  };
 }

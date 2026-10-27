@@ -1,9 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fakeEmbedder } from "../../test/fake-embedder";
 import { createFakeHost } from "../../test/fake-host";
 import { memoryId } from "../../test/memory-id";
-import { FIRST_ID as ID, type RuntimeFixture, useRuntime } from "../../test/runtime-fixture";
+import {
+  FIRST_ID as ID,
+  type RuntimeFixture,
+  SESSION,
+  useRuntime,
+} from "../../test/runtime-fixture";
 import { useTempDirs } from "../../test/temp-dir";
 import { validContent } from "../../test/valid-content";
 import { newMemory } from "./model/memory";
@@ -88,6 +94,16 @@ describe("createRuntime", () => {
     expect(syncLogs(next)).toEqual([{ indexed: 1, removed: 0 }]);
   });
 
+  test("an unusable vector file is recreated and logged", () => {
+    const fx = runtime();
+    fx.runtime.dispose();
+    writeFileSync(join(fx.dataDir, "vectors.sqlite"), "not a database ".repeat(40));
+
+    const next = fx.restart();
+
+    expect(next.host.logs.map((entry) => entry.msg)).toContain("vector cache recreated");
+  });
+
   test("an invalid memory file is skipped and logged", () => {
     const fx = runtime();
     mkdirSync(join(fx.dataDir, "user", "fact"), { recursive: true });
@@ -108,7 +124,32 @@ describe("createRuntime", () => {
   });
 });
 
-const TOOLS = ["memory_save", "memory_update", "memory_read", "memory_forget"];
+describe("dispose with a loaded embedding model", () => {
+  const closing = { count: 0 };
+  const withModel = useRuntime({
+    embedder: {
+      ...fakeEmbedder([["anything"]]),
+      close: () => {
+        closing.count += 1;
+      },
+    },
+  });
+
+  test("closes the model once", async () => {
+    closing.count = 0;
+    const fx = withModel();
+    // The first search starts the model load; the second sees it loaded.
+    await fx.host.callTool("memory_search", { query: "anything" }, SESSION);
+    await fx.host.callTool("memory_search", { query: "anything" }, SESSION);
+
+    fx.runtime.dispose();
+    fx.runtime.dispose();
+
+    expect(closing.count).toBe(1);
+  });
+});
+
+const TOOLS = ["memory_save", "memory_update", "memory_read", "memory_search", "memory_forget"];
 
 const tempDir = useTempDirs();
 
@@ -124,6 +165,7 @@ describe("activate", () => {
       git: processGit,
       now: () => new Date(0),
       newId: () => memoryId(ID),
+      loadEmbedder: () => Promise.reject(new Error("no model in this test")),
       options: undefined,
     });
 

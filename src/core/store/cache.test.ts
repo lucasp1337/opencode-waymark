@@ -8,7 +8,8 @@ import { validContent } from "../../../test/valid-content";
 import { type Memory, newMemory } from "../model/memory";
 import { ownField } from "../model/own-field";
 import type { ScopeRef } from "../model/scope";
-import { CacheCorruptError, type MemoryCache, openCache, openSyncedCache } from "./cache";
+import { type MemoryCache, openCache, openSyncedCache } from "./cache";
+import { CacheCorruptError } from "./derived-database";
 import { type FileSystem, nodeFileSystem } from "./fs";
 import { createMemoryFiles, type MemoryFiles } from "./memory-files";
 
@@ -202,7 +203,7 @@ describe("sync", () => {
     expect(report).toEqual({ indexed: 0, removed: 1, invalid: [] });
     expect(titles(cache.inScopes(CHAIN))).toEqual(["Kept"]);
     expect(cache.get(gone.id)).toBeUndefined();
-    expect(titles(cache.related("body", CHAIN, 10))).toEqual(["Kept"]);
+    expect(titles(cache.related({ text: "body", scopes: CHAIN, limit: 10 }))).toEqual(["Kept"]);
   });
 
   test("reports a file that cannot be decoded and does not index it", () => {
@@ -329,7 +330,9 @@ describe("persistence", () => {
 
     expect(report.indexed).toBe(2);
     expect(titles(rebuilt.inScopes(CHAIN))).toEqual(["Staging resets nightly", "Memory 2"]);
-    expect(titles(rebuilt.related("staging", CHAIN, 3))).toEqual(["Staging resets nightly"]);
+    expect(titles(rebuilt.related({ text: "staging", scopes: CHAIN, limit: 3 }))).toEqual([
+      "Staging resets nightly",
+    ]);
   });
 
   test("rebuilds from the files when the database has another schema version", () => {
@@ -370,35 +373,45 @@ describe("related", () => {
     const { cache, add } = searchable();
     add(fixture({ n: 1, title: "Layout", body: "koreňový adresár" }));
 
-    expect(titles(cache.related("korenovy", CHAIN, 3))).toEqual(["Layout"]);
+    expect(titles(cache.related({ text: "korenovy", scopes: CHAIN, limit: 3 }))).toEqual([
+      "Layout",
+    ]);
   });
 
   test("finds a precomposed word from its decomposed spelling", () => {
     const { cache, add } = searchable();
     add(fixture({ n: 1, body: KOREN.normalize("NFC") }));
 
-    expect(titles(cache.related(KOREN.normalize("NFD"), CHAIN, 3))).toEqual(["Memory 1"]);
+    expect(
+      titles(cache.related({ text: KOREN.normalize("NFD"), scopes: CHAIN, limit: 3 })),
+    ).toEqual(["Memory 1"]);
   });
 
   test("finds a decomposed word from its precomposed spelling", () => {
     const { cache, add } = searchable();
     add(fixture({ n: 1, body: KOREN.normalize("NFD") }));
 
-    expect(titles(cache.related(KOREN.normalize("NFC"), CHAIN, 3))).toEqual(["Memory 1"]);
+    expect(
+      titles(cache.related({ text: KOREN.normalize("NFC"), scopes: CHAIN, limit: 3 })),
+    ).toEqual(["Memory 1"]);
   });
 
   test("matches words in the title as well as in the body", () => {
     const { cache, add } = searchable();
     add(fixture({ n: 1, title: "Unicorn deployments", body: "details" }));
 
-    expect(titles(cache.related("unicorn", CHAIN, 3))).toEqual(["Unicorn deployments"]);
+    expect(titles(cache.related({ text: "unicorn", scopes: CHAIN, limit: 3 }))).toEqual([
+      "Unicorn deployments",
+    ]);
   });
 
   test("ignores letter case in the query", () => {
     const { cache, add } = searchable();
     add(fixture({ n: 1, body: "deploy" }));
 
-    expect(titles(cache.related("DEPLOY", CHAIN, 3))).toEqual(["Memory 1"]);
+    expect(titles(cache.related({ text: "DEPLOY", scopes: CHAIN, limit: 3 }))).toEqual([
+      "Memory 1",
+    ]);
   });
 
   test("ranks the memory that matches more of the query first", () => {
@@ -406,7 +419,10 @@ describe("related", () => {
     add(fixture({ n: 1, title: "Misc", body: "the deploy" }));
     add(fixture({ n: 2, title: "Deploy staging", body: "deploy to staging runs migrations" }));
 
-    expect(titles(cache.related("deploy staging", CHAIN, 3))).toEqual(["Deploy staging", "Misc"]);
+    expect(titles(cache.related({ text: "deploy staging", scopes: CHAIN, limit: 3 }))).toEqual([
+      "Deploy staging",
+      "Misc",
+    ]);
   });
 
   test("returns at most the limit", () => {
@@ -415,7 +431,46 @@ describe("related", () => {
     add(fixture({ n: 2, body: "deploy" }));
     add(fixture({ n: 3, body: "deploy" }));
 
-    expect(cache.related("deploy", CHAIN, 2)).toHaveLength(2);
+    expect(cache.related({ text: "deploy", scopes: CHAIN, limit: 2 })).toHaveLength(2);
+  });
+
+  test("applies the kind filter before the limit", () => {
+    const { cache, add } = searchable();
+    for (const n of [1, 2, 3, 4]) {
+      add(fixture({ n, kind: "fact", body: "deploy deploy deploy deploy" }));
+    }
+    add(fixture({ n: 5, kind: "preference", body: "deploy" }));
+
+    const found = cache.related({
+      text: "deploy",
+      scopes: CHAIN,
+      kinds: ["preference"],
+      limit: 2,
+    });
+
+    expect(titles(found)).toEqual(["Memory 5"]);
+  });
+
+  test("matches any of several kinds", () => {
+    const { cache, add } = searchable();
+    add(fixture({ n: 1, kind: "fact", body: "deploy" }));
+    add(fixture({ n: 2, kind: "preference", body: "deploy" }));
+
+    const found = cache.related({
+      text: "deploy",
+      scopes: CHAIN,
+      kinds: ["fact", "preference"],
+      limit: 5,
+    });
+
+    expect(titles(found)).toEqual(["Memory 1", "Memory 2"]);
+  });
+
+  test("matches nothing when the kind filter is empty", () => {
+    const { cache, add } = searchable();
+    add(fixture({ n: 1, body: "deploy" }));
+
+    expect(cache.related({ text: "deploy", scopes: CHAIN, kinds: [], limit: 5 })).toEqual([]);
   });
 
   test("ignores memories outside the given scopes", () => {
@@ -423,14 +478,16 @@ describe("related", () => {
     add(fixture({ n: 1, scope: REPO, body: "deploy" }));
     add(fixture({ n: 2, scope: OTHER_REPO, body: "deploy" }));
 
-    expect(titles(cache.related("deploy", [USER, REPO], 3))).toEqual(["Memory 1"]);
+    expect(titles(cache.related({ text: "deploy", scopes: [USER, REPO], limit: 3 }))).toEqual([
+      "Memory 1",
+    ]);
   });
 
   test("returns nothing for text without word tokens", () => {
     const { cache, add } = searchable();
     add(fixture({ n: 1, body: "deploy" }));
 
-    expect(cache.related(' ?! -- "" ** ', CHAIN, 3)).toEqual([]);
+    expect(cache.related({ text: ' ?! -- "" ** ', scopes: CHAIN, limit: 3 })).toEqual([]);
   });
 
   test.each(['"', "*", "-", ":", "(", "^", "OR", "NOT", "NEAR("])(
@@ -439,7 +496,9 @@ describe("related", () => {
       const { cache, add } = searchable();
       add(fixture({ n: 1, body: "deploy staging" }));
 
-      expect(titles(cache.related(`deploy ${special} staging`, CHAIN, 3))).toEqual(["Memory 1"]);
+      expect(
+        titles(cache.related({ text: `deploy ${special} staging`, scopes: CHAIN, limit: 3 })),
+      ).toEqual(["Memory 1"]);
     },
   );
 
@@ -451,14 +510,16 @@ describe("related", () => {
     add(fixture({ n: 1, body: "zebra" }));
     const query = [...Array.from({ length: fillers }, (_, i) => `filler${i}`), "zebra"].join(" ");
 
-    expect(titles(cache.related(query, CHAIN, 3))).toEqual(expected);
+    expect(titles(cache.related({ text: query, scopes: CHAIN, limit: 3 }))).toEqual(expected);
   });
 
   test("counts a repeated word once toward the 32-word cap", () => {
     const { cache, add } = searchable();
     add(fixture({ n: 1, body: "zebra" }));
 
-    expect(titles(cache.related(`${"alpha ".repeat(40)}zebra`, CHAIN, 3))).toEqual(["Memory 1"]);
+    expect(
+      titles(cache.related({ text: `${"alpha ".repeat(40)}zebra`, scopes: CHAIN, limit: 3 })),
+    ).toEqual(["Memory 1"]);
   });
 });
 
@@ -494,7 +555,7 @@ describe("an empty scope chain", () => {
     putAnywhere(cache, fixture({ n: 1, body: "deploy" }));
 
     expect(cache.inScopes([])).toEqual([]);
-    expect(cache.related("deploy", [], 3)).toEqual([]);
+    expect(cache.related({ text: "deploy", scopes: [], limit: 3 })).toEqual([]);
   });
 
   test("is answered without querying the database", () => {
@@ -502,7 +563,7 @@ describe("an empty scope chain", () => {
     cache.close();
 
     expect(cache.inScopes([])).toEqual([]);
-    expect(cache.related("deploy", [], 3)).toEqual([]);
+    expect(cache.related({ text: "deploy", scopes: [], limit: 3 })).toEqual([]);
   });
 });
 
@@ -528,8 +589,8 @@ describe("put", () => {
     cache.put(fixture({ n: 1, body: "alpha" }), "/data/a.md", 1);
     cache.put(fixture({ n: 1, body: "beta" }), "/data/a.md", 2);
 
-    expect(cache.related("alpha", CHAIN, 3)).toEqual([]);
-    expect(titles(cache.related("beta", CHAIN, 3))).toEqual(["Memory 1"]);
+    expect(cache.related({ text: "alpha", scopes: CHAIN, limit: 3 })).toEqual([]);
+    expect(titles(cache.related({ text: "beta", scopes: CHAIN, limit: 3 }))).toEqual(["Memory 1"]);
     expect(cache.inScopes(CHAIN)).toHaveLength(1);
   });
 
@@ -542,7 +603,7 @@ describe("put", () => {
 
     expect(cache.get(evicted.id)).toBeUndefined();
     expect(cache.get(holder.id)?.path).toBe("/data/shared.md");
-    expect(cache.related("alpha", CHAIN, 3)).toEqual([]);
+    expect(cache.related({ text: "alpha", scopes: CHAIN, limit: 3 })).toEqual([]);
   });
 
   test("moves a memory to its new path", () => {
@@ -565,7 +626,7 @@ describe("delete", () => {
 
     expect(cache.get(memory.id)).toBeUndefined();
     expect(cache.inScopes(CHAIN)).toEqual([]);
-    expect(cache.related("deploy", CHAIN, 3)).toEqual([]);
+    expect(cache.related({ text: "deploy", scopes: CHAIN, limit: 3 })).toEqual([]);
   });
 
   test("leaves other memories alone", () => {
@@ -576,7 +637,9 @@ describe("delete", () => {
 
     cache.delete(removed.id);
 
-    expect(titles(cache.related("deploy", CHAIN, 3))).toEqual(["Memory 2"]);
+    expect(titles(cache.related({ text: "deploy", scopes: CHAIN, limit: 3 }))).toEqual([
+      "Memory 2",
+    ]);
   });
 
   test("deleting an unknown id is not an error", () => {
@@ -643,7 +706,7 @@ describe("a cache that is damaged after it was opened", () => {
 
     expect(reset).toContain("malformed");
     expect(report.indexed).toBe(5);
-    expect(cache.related("deploy", CHAIN, 10)).toHaveLength(5);
+    expect(cache.related({ text: "deploy", scopes: CHAIN, limit: 10 })).toHaveLength(5);
   });
 
   test("is not rebuilt for an error that does not come from the cache", () => {
@@ -695,12 +758,12 @@ describe("sharing the cache file between processes", () => {
     const memory = fixture({ n: 1, body: "deploy" });
 
     putAnywhere(first, memory);
-    const seenBySecond = titles(second.related("deploy", CHAIN, 3));
+    const seenBySecond = titles(second.related({ text: "deploy", scopes: CHAIN, limit: 3 }));
     second.delete(memory.id);
 
     expect(seenBySecond).toEqual(["Memory 1"]);
     expect(first.get(memory.id)).toBeUndefined();
-    expect(first.related("deploy", CHAIN, 3)).toEqual([]);
+    expect(first.related({ text: "deploy", scopes: CHAIN, limit: 3 })).toEqual([]);
   });
 });
 

@@ -4,6 +4,7 @@ import { err, ok, type Result } from "../../model/result";
 import {
   isScopeLevel,
   SCOPE_LEVELS,
+  type ScopeChain,
   type ScopeLevel,
   type ScopeRef,
   scopeAt,
@@ -87,6 +88,20 @@ function buildMemory(
   return ok({ ...updated, created: existing.created });
 }
 
+// Words and, once the local model is loaded, meaning: a paraphrase in another language counts.
+async function relatedTo(
+  deps: ToolDeps,
+  { title, body }: ValidContent,
+  scopes: ScopeChain,
+): Promise<Memory[]> {
+  const found = await deps.retriever.search({
+    text: `${title}\n${body}`,
+    scopes,
+    limit: RELATED_LIMIT,
+  });
+  return found.memories;
+}
+
 async function save(deps: ToolDeps, input: unknown, sessionID: string): Promise<string> {
   const request = parseRequest(input);
   if (!request.ok) {
@@ -98,11 +113,8 @@ async function save(deps: ToolDeps, input: unknown, sessionID: string): Promise<
     const available = chain.map(scopeKey).join(", ");
     return `Not saved: this session has no ${request.value.level} scope; it has ${available}.`;
   }
-  const { title, body } = request.value.content;
   const related =
-    request.value.relation === undefined
-      ? deps.store.related(`${title}\n${body}`, chain, RELATED_LIMIT)
-      : [];
+    request.value.relation === undefined ? await relatedTo(deps, request.value.content, chain) : [];
   if (related.length > 0) {
     return relatedMessage(related);
   }

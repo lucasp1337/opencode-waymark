@@ -6,6 +6,7 @@ import type { MemoryId } from "../src/core/model/id";
 import type { Capabilities } from "../src/core/port";
 import { createRuntime, type Runtime } from "../src/core/runtime";
 import type { Git } from "../src/core/scope/git";
+import type { Embedder } from "../src/core/store/embedder";
 import { nodeFileSystem } from "../src/core/store/fs";
 import { createFakeHost, type FakeHost } from "./fake-host";
 import { memoryId } from "./memory-id";
@@ -68,6 +69,14 @@ interface RuntimeSetup {
   // Plugin options, as the user's opencode config would pass them.
   readonly options?: unknown;
   readonly capabilities?: Capabilities;
+  // Without one the model never finishes loading, so retrieval is by words only.
+  readonly embedder?: Embedder;
+}
+
+function embedderFor(setup: RuntimeSetup): Promise<Embedder> {
+  return setup.embedder === undefined
+    ? new Promise(() => undefined)
+    : Promise.resolve(setup.embedder);
 }
 
 function start(activation: Activation): RuntimeFixture {
@@ -82,6 +91,7 @@ function start(activation: Activation): RuntimeFixture {
     now: clock.now,
     newId,
     options: activation.setup.options,
+    loadEmbedder: () => embedderFor(activation.setup),
   });
   const fixture: RuntimeFixture = {
     host,

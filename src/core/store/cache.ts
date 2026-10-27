@@ -1,44 +1,43 @@
-import { Database } from "bun:sqlite";
-import { rmSync } from "node:fs";
+import type { Database } from "bun:sqlite";
 import type { MemoryId } from "../model/id";
+import type { Kind } from "../model/kind";
 import type { Memory } from "../model/memory";
 import { ownField } from "../model/own-field";
 import { type ScopeChain, scopeKey } from "../model/scope";
 import { decodeMemory, encodeMemory } from "./codec";
+import {
+  CacheCorruptError,
+  type DerivedSchema,
+  isUnusableCache,
+  openDerivedDatabase,
+  wipeDatabaseFiles,
+  writing,
+} from "./derived-database";
 import type { MemoryFiles } from "./memory-files";
-
-// Bump when the tables change; a different stored version drops and rebuilds them.
-const SCHEMA_VERSION = 2;
 
 // A memory_text row has the rowid of its memories row, so it is found without scanning. The
 // explicit integer key keeps that rowid stable, which an implicit one is not across a VACUUM.
-const SCHEMA = `
-  CREATE TABLE IF NOT EXISTS memories (
-    seq INTEGER PRIMARY KEY,
-    id TEXT NOT NULL UNIQUE,
-    path TEXT NOT NULL UNIQUE,
-    mtime REAL NOT NULL,
-    updated TEXT NOT NULL,
-    scope TEXT NOT NULL,
-    source TEXT NOT NULL
-  );
-  CREATE VIRTUAL TABLE IF NOT EXISTS memory_text USING fts5(
-    title, body, tokenize = 'unicode61 remove_diacritics 2'
-  );
-  PRAGMA user_version = ${SCHEMA_VERSION};
-`;
+const SCHEMA: DerivedSchema = {
+  version: 3,
+  tables: ["memory_text", "memories"],
+  sql: `
+    CREATE TABLE IF NOT EXISTS memories (
+      seq INTEGER PRIMARY KEY,
+      id TEXT NOT NULL UNIQUE,
+      path TEXT NOT NULL UNIQUE,
+      mtime REAL NOT NULL,
+      updated TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      source TEXT NOT NULL
+    );
+    CREATE VIRTUAL TABLE IF NOT EXISTS memory_text USING fts5(
+      title, body, tokenize = 'unicode61 remove_diacritics 2'
+    );
+  `,
+};
 
 const MAX_QUERY_WORDS = 32;
-
-// Other opencode processes may share the cache file; wait for their writes instead of failing.
-const BUSY_TIMEOUT_MS = 2000;
-
-export class CacheCorruptError extends Error {
-  constructor(subject: string, reason: string) {
-    super(`cache is corrupt: ${subject} ${reason}`);
-    this.name = "CacheCorruptError";
-  }
-}
 
 export interface SyncReport {
   // Files read and written to the cache during this sync, not the cache's total size.
@@ -63,6 +62,14 @@ interface CachedMemory {
   readonly path: string;
 }
 
+export interface RelatedQuery {
+  readonly text: string;
+  readonly scopes: ScopeChain;
+  // Only these kinds; every kind when absent.
+  readonly kinds?: readonly Kind[] | undefined;
+  readonly limit: number;
+}
+
 // A derived, deletable index over the memory files; the files stay the source of truth.
 export interface MemoryCache {
   // Brings the cache in line with the files: new or changed files are (re)indexed, rows of files
@@ -75,7 +82,7 @@ export interface MemoryCache {
   // Oldest first.
   inScopes(scopes: ScopeChain): Memory[];
   // Best match first, over title and body.
-  related(text: string, scopes: ScopeChain, limit: number): Memory[];
+  related(query: RelatedQuery): Memory[];
   close(): void;
 }
 
@@ -124,22 +131,6 @@ function byCreation(a: Memory, b: Memory): number {
   return compareText(a.created, b.created) || compareText(a.id, b.id);
 }
 
-// Immediate, so the write lock is taken up front and waits for other writers instead of failing
-// when a read lock cannot be upgraded.
-function writing<T>(db: Database, work: () => T): T {
-  return db.transaction(work).immediate();
-}
-
-function prepareSchema(db: Database): void {
-  writing(db, () => {
-    const stored = numberColumn(db.query<unknown, []>("PRAGMA user_version").get(), "user_version");
-    if (stored !== SCHEMA_VERSION) {
-      db.exec("DROP TABLE IF EXISTS memory_text; DROP TABLE IF EXISTS memories;");
-    }
-    db.exec(SCHEMA);
-  });
-}
-
 function removeById(db: Database, id: string): void {
   db.query("DELETE FROM memory_text WHERE rowid IN (SELECT seq FROM memories WHERE id = ?)").run(
     id,
@@ -162,8 +153,16 @@ function replaceEntry(db: Database, { memory, path, mtimeMs }: IndexEntry): void
   ).run(memory.id, path);
   db.query("DELETE FROM memories WHERE id = ? OR path = ?").run(memory.id, path);
   db.query(
-    "INSERT INTO memories (id, path, mtime, updated, scope, source) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(memory.id, path, mtimeMs, memory.updated, scopeKey(memory.scope), encodeMemory(memory));
+    "INSERT INTO memories (id, path, mtime, updated, scope, kind, source) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    memory.id,
+    path,
+    mtimeMs,
+    memory.updated,
+    scopeKey(memory.scope),
+    memory.kind,
+    encodeMemory(memory),
+  );
   db.query("INSERT INTO memory_text (rowid, title, body) VALUES (last_insert_rowid(), ?, ?)").run(
     memory.title,
     memory.body,
@@ -290,6 +289,25 @@ function wordsIn(text: string): string[] {
   return [...new Set(words)].slice(0, MAX_QUERY_WORDS);
 }
 
+function relatedMemories(db: Database, { text, scopes, kinds, limit }: RelatedQuery): Memory[] {
+  const words = wordsIn(text);
+  if (words.length === 0 || scopes.length === 0 || kinds?.length === 0) {
+    return [];
+  }
+  const keys = scopes.map(scopeKey);
+  const kindFilter = kinds === undefined ? "" : `AND m.kind IN (${placeholders(kinds.length)})`;
+  const rows = select(
+    db,
+    `SELECT m.id, m.path, m.source
+     FROM memory_text AS f JOIN memories AS m ON m.seq = f.rowid
+     WHERE memory_text MATCH ? AND m.scope IN (${placeholders(keys.length)}) ${kindFilter}
+     ORDER BY bm25(memory_text), m.id
+     LIMIT ?`,
+    [words.map((word) => `"${word}"`).join(" OR "), ...keys, ...(kinds ?? []), limit],
+  );
+  return rows.map((row) => cachedMemory(row).memory);
+}
+
 function cacheOver(db: Database): MemoryCache {
   return {
     sync(files) {
@@ -318,70 +336,15 @@ function cacheOver(db: Database): MemoryCache {
       );
       return rows.map((row) => cachedMemory(row).memory).toSorted(byCreation);
     },
-    related(text, scopes, limit) {
-      const words = wordsIn(text);
-      if (words.length === 0 || scopes.length === 0) {
-        return [];
-      }
-      const keys = scopes.map(scopeKey);
-      const rows = select(
-        db,
-        `SELECT m.id, m.path, m.source
-         FROM memory_text AS f JOIN memories AS m ON m.seq = f.rowid
-         WHERE memory_text MATCH ? AND m.scope IN (${placeholders(keys.length)})
-         ORDER BY bm25(memory_text), m.id
-         LIMIT ?`,
-        [words.map((word) => `"${word}"`).join(" OR "), ...keys, limit],
-      );
-      return rows.map((row) => cachedMemory(row).memory);
-    },
+    related: (query) => relatedMemories(db, query),
     close: () => db.close(),
   };
 }
 
-function connect(file: string): Database {
-  const db = new Database(file, { create: true });
-  try {
-    db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
-    db.exec("PRAGMA journal_mode = WAL");
-    prepareSchema(db);
-    return db;
-  } catch (error) {
-    db.close();
-    throw error;
-  }
-}
-
-// Only errors that say the cache itself is unusable justify deleting it; a busy or read-only
-// database belongs to someone else and must be left alone.
-export function isUnusableCache(error: unknown): error is Error {
-  if (error instanceof CacheCorruptError) {
-    return true;
-  }
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    (error.code === "SQLITE_NOTADB" || error.code === "SQLITE_CORRUPT")
-  );
-}
-
-function wipe(file: string): void {
-  for (const path of [file, `${file}-wal`, `${file}-shm`]) {
-    rmSync(path, { force: true });
-  }
-}
-
 // The cache is derived from the memory files, so an unusable one is recreated from scratch.
 export function openCache(file: string): OpenedCache {
-  try {
-    return { cache: cacheOver(connect(file)), reset: undefined };
-  } catch (error) {
-    if (!isUnusableCache(error)) {
-      throw error;
-    }
-    wipe(file);
-    return { cache: cacheOver(connect(file)), reset: error.message };
-  }
+  const { db, reset } = openDerivedDatabase(file, SCHEMA);
+  return { cache: cacheOver(db), reset };
 }
 
 function syncOrClose(cache: MemoryCache, files: MemoryFiles): SyncReport {
@@ -404,7 +367,7 @@ export function openSyncedCache(file: string, files: MemoryFiles): SyncedCache {
     if (!isUnusableCache(error)) {
       throw error;
     }
-    wipe(file);
+    wipeDatabaseFiles(file);
     const { cache } = openCache(file);
     return { cache, reset: error.message, report: syncOrClose(cache, files) };
   }

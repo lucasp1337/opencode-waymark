@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { SESSION, useRuntime } from "../../test/runtime-fixture";
+import { fakeEmbedder } from "../../test/fake-embedder";
+import { FIRST_ID, SESSION, useRuntime } from "../../test/runtime-fixture";
 import { INSTRUCTIONS } from "./features/recall/instructions";
 
 const runtime = useRuntime();
@@ -180,5 +181,43 @@ describe("plugin options", () => {
       msg: "plugin option ignored",
       data: { problem: 'option "subagents" must be a list of agent names; ignored' },
     });
+  });
+});
+
+describe("duplicates across languages", () => {
+  const withModel = useRuntime({
+    embedder: fakeEmbedder([
+      [
+        "deploy script must run from the repository root",
+        "nasadenie sa musí spúšťať z koreňa repozitára",
+      ],
+    ]),
+  });
+
+  test("a Slovak paraphrase of an English memory is returned as a related memory", async () => {
+    const fx = withModel();
+    const english = {
+      kind: "fact",
+      scope: "repo",
+      title: "The deploy script must run from the repository root",
+      body: "Subdirectories break its relative paths.",
+    };
+    await fx.host.callTool("memory_save", english, SESSION);
+    // The first search starts the model load; it is ready from the next one on.
+    await fx.host.callTool("memory_search", { query: "warm up" }, SESSION);
+
+    const reply = await fx.host.callTool(
+      "memory_save",
+      {
+        kind: "fact",
+        scope: "repo",
+        title: "Skript na nasadenie sa musí spúšťať z koreňa repozitára",
+        body: "Inak sa rozbijú cesty.",
+      },
+      SESSION,
+    );
+
+    expect(reply).toStartWith("Not saved yet: related memories exist.");
+    expect(reply).toContain(`[${FIRST_ID}] fact`);
   });
 });
