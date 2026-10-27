@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { useRuntime } from "../../test/runtime-fixture";
 import type { JsonSchemaObject } from "../core/port";
 import { buildShape, type SchemaBuilder, UnsupportedSchemaError } from "./schema";
 
@@ -73,5 +74,22 @@ describe("buildShape", () => {
     const schema = objectOf({ mode: { type: "string", enum: [] } });
 
     expect(() => buildShape(schema, treeBuilder)).toThrow(UnsupportedSchemaError);
+  });
+});
+
+describe("Waymark's tool schemas", () => {
+  const runtime = useRuntime();
+
+  test("every registered tool schema converts with only supported types", () => {
+    const shapes = [...runtime().host.tools.values()].map((tool) =>
+      buildShape(tool.inputSchema, treeBuilder),
+    );
+
+    expect(shapes.map((shape) => Object.keys(shape))).toEqual([
+      ["kind", "scope", "title", "body", "why", "triggers", "relation"],
+      ["id", "title", "body", "why", "triggers"],
+      ["id"],
+      ["id"],
+    ]);
   });
 });

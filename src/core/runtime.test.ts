@@ -108,7 +108,7 @@ describe("createRuntime", () => {
   });
 });
 
-const TOOLS = ["memory_save", "memory_update", "memory_read"];
+const TOOLS = ["memory_save", "memory_update", "memory_read", "memory_forget"];
 
 const tempDir = useTempDirs();
 

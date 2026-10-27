@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { guardedTool } from "./features/guarded-tool";
+import { memoryForgetTool } from "./features/lifecycle/memory-forget";
 import { memoryReadTool } from "./features/recall/memory-read";
 import { BALANCED_CAPS } from "./features/save/budget";
 import { memorySaveTool } from "./features/save/memory-save";
@@ -50,7 +51,7 @@ function registerTools(host: HostPort, deps: RuntimeDeps, store: MemoryStore): v
     newId: deps.newId,
     caps: BALANCED_CAPS,
   };
-  const tools = [memorySaveTool, memoryUpdateTool, memoryReadTool];
+  const tools = [memorySaveTool, memoryUpdateTool, memoryReadTool, memoryForgetTool];
   for (const tool of tools) {
     host.registerTool(guardedTool(host, tool(toolDeps)));
   }
