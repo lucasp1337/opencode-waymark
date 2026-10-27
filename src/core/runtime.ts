@@ -8,6 +8,7 @@ import { DEFAULT_LIFECYCLE } from "./features/lifecycle/lifecycle-settings";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
 import { createReviewSignals } from "./features/lifecycle/review-signals";
 import { memoryLinkTool } from "./features/link/memory-link";
+import { createSecondRepoHints } from "./features/link/second-repo";
 import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
 import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
@@ -181,6 +182,22 @@ function registerJit({ host, store, counters }: Wiring, recallScope: RecallScope
   return jit;
 }
 
+// Sessions without recall are not asked about products either.
+function registerSecondRepoHints(
+  { host, deps, registryFile }: Wiring,
+  recallScope: RecallScopeOf,
+): Forgetter {
+  const hints = createSecondRepoHints({
+    recallScope,
+    git: deps.git,
+    fs: deps.fs,
+    registryFile,
+    log: host.log,
+  });
+  host.onToolAfter((call) => hints.onToolAfter(call));
+  return hints;
+}
+
 // Sessions without recall get no compaction note either.
 function registerCompaction({ host, config }: Wiring, recallScope: RecallScopeOf): void {
   host.onCompaction(async (sessionID) =>
@@ -199,7 +216,7 @@ function registerRecall(wiring: Wiring): void {
     forgetters.push(registerSessionBlocks(wiring, recallScope));
   }
   if (host.capabilities.toolOutputMutation) {
-    forgetters.push(registerJit(wiring, recallScope));
+    forgetters.push(registerJit(wiring, recallScope), registerSecondRepoHints(wiring, recallScope));
   }
   if (host.capabilities.compactionHook) {
     registerCompaction(wiring, recallScope);

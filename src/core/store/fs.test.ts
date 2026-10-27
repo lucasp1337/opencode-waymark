@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { useTempDirs } from "../../../test/temp-dir";
 import { nodeFileSystem as fs } from "./fs";
@@ -102,5 +102,34 @@ describe("nodeFileSystem", () => {
     utimesSync(file, 1_700_000_000, 1_700_000_000);
 
     expect(fs.mtimeMs(file)).toBe(1_700_000_000_000);
+  });
+
+  test("isDirectory is true for a directory", () => {
+    expect(fs.isDirectory(tempDir())).toBe(true);
+  });
+
+  test("isDirectory is false for a file", () => {
+    const file = join(tempDir(), "f.txt");
+    writeFileSync(file, "");
+
+    expect(fs.isDirectory(file)).toBe(false);
+  });
+
+  test("isDirectory is false for a path that does not exist", () => {
+    expect(fs.isDirectory(join(tempDir(), "missing"))).toBe(false);
+  });
+
+  test("isDirectory is false for a path below a file", () => {
+    const file = join(tempDir(), "f.txt");
+    writeFileSync(file, "");
+
+    expect(fs.isDirectory(join(file, "x"))).toBe(false);
+  });
+
+  test("isDirectory throws for errors other than a missing path", () => {
+    const loop = join(tempDir(), "loop");
+    symlinkSync(loop, loop);
+
+    expect(() => fs.isDirectory(loop)).toThrow();
   });
 });

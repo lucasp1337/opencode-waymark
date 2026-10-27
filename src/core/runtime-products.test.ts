@@ -2,11 +2,30 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FIRST_ID, SESSION, useRuntime, WEB_SESSION } from "../../test/runtime-fixture";
+import type { ToolCallInfo } from "./port";
 
 const runtime = useRuntime();
+const noOutputMutation = useRuntime({
+  capabilities: {
+    systemInjection: true,
+    toolOutputMutation: false,
+    compactionHook: true,
+    toast: true,
+  },
+});
 
 const API = "github.com/acme/api";
 const WEB = "github.com/acme/web";
+
+function readIn(sessionID: string, filePath: string): ToolCallInfo {
+  return {
+    sessionID,
+    tool: "read",
+    args: { filePath },
+    touchedPaths: [filePath],
+    appendable: true,
+  };
+}
 
 const productRule = {
   kind: "rule",
@@ -56,5 +75,69 @@ describe("products", () => {
     expect(await fx.host.callTool("memory_save", productRule, SESSION)).toStartWith(
       `Saved [${FIRST_ID}] rule · product:payments`,
     );
+  });
+});
+
+describe("working across two repos", () => {
+  test("the first call into the other repo carries exactly one hint", async () => {
+    const fx = runtime();
+
+    const first = await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"));
+    const second = await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/checkout.ts"));
+    const own = await fx.host.emitToolAfter(readIn(SESSION, "/work/api/src/server.ts"));
+
+    expect(first).toEqual([
+      [
+        `waymark · this session's repo is ${API}; this call touched another repo, ${WEB}.`,
+        "Ask the user, in your own words, whether both repos belong to one product, so memories saved to the product apply in both.",
+        `Record the answer: yes: memory_link with repos ["${API}", "${WEB}"] and product set to the name the user chooses; no: memory_link with the same repos and decline true, and waymark will not ask again.`,
+      ].join("\n"),
+    ]);
+    expect(second).toEqual([]);
+    expect(own).toEqual([]);
+  });
+
+  test("after a No the pair is never hinted again, in later sessions and activations", async () => {
+    const fx = runtime();
+    await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"));
+    await fx.host.callTool("memory_link", { repos: [API, WEB], decline: true }, SESSION);
+    const next = fx.restart();
+    next.host.sessions.set("ses_later", { id: "ses_later", directory: "/work/api" });
+
+    expect(await next.host.emitToolAfter(readIn("ses_later", "/work/web/src/cart.ts"))).toEqual([]);
+    expect(await next.host.emitToolAfter(readIn(WEB_SESSION, "/work/api/src/server.ts"))).toEqual(
+      [],
+    );
+  });
+
+  test("after a Yes the linked repos are not hinted about each other", async () => {
+    const fx = runtime();
+    await fx.host.callTool("memory_link", { repos: [API, WEB], product: "payments" }, SESSION);
+
+    expect(await fx.host.emitToolAfter(readIn(WEB_SESSION, "/work/api/src/server.ts"))).toEqual([]);
+  });
+
+  test("an unanswered hint is shown again in the next session", async () => {
+    const fx = runtime();
+    await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"));
+    fx.host.sessions.set("ses_next", { id: "ses_next", directory: "/work/api" });
+
+    expect(await fx.host.emitToolAfter(readIn("ses_next", "/work/web/src/cart.ts"))).toHaveLength(
+      1,
+    );
+  });
+
+  test("a deleted session is forgotten, so its id starts over", async () => {
+    const fx = runtime();
+    await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"));
+    await fx.host.emitSessionEvent({ type: "deleted", sessionID: SESSION });
+
+    expect(await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"))).toHaveLength(1);
+  });
+
+  test("a host that cannot append to tool output gets no hint hook", async () => {
+    const fx = noOutputMutation();
+
+    expect(await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"))).toEqual([]);
   });
 });

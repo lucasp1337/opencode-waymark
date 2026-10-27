@@ -26,10 +26,28 @@ export interface FileSystem {
   listFiles(dir: string): string[];
   // undefined when the file does not exist.
   mtimeMs(path: string): number | undefined;
+  // False for a file and for a path that does not exist; other errors throw.
+  isDirectory(path: string): boolean;
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
 }
 
 function isMissing(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
+  return hasCode(error, "ENOENT");
+}
+
+function isDirectory(path: string): boolean {
+  try {
+    return statSync(path).isDirectory();
+  } catch (error) {
+    // ENOTDIR: a parent in the path is a file, so nothing can exist there.
+    if (isMissing(error) || hasCode(error, "ENOTDIR")) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function writeAtomic(path: string, text: string): void {
@@ -79,4 +97,5 @@ export const nodeFileSystem: FileSystem = {
   move,
   listFiles,
   mtimeMs: (path) => statSync(path, { throwIfNoEntry: false })?.mtimeMs,
+  isDirectory,
 };
