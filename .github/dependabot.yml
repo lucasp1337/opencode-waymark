@@ -1,0 +1,19 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # The SDK is pinned to the opencode version Waymark is tested against.
+    # It is bumped by hand, together with the live test results.
+    ignore:
+      - dependency-name: "@opencode-ai/plugin"
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]

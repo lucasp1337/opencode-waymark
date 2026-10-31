@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a new feature or a change to how Waymark works.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the problem, not the solution. A clear use case makes it much easier to judge an idea.
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What problem do you run into? When does it happen, and what do you do about it today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How would you use the feature? Show the command, setting or behaviour you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other ways to solve it, including workarounds or doing nothing.
+    validations:
+      required: true
+  - type: textarea
+    id: trade-offs
+    attributes:
+      label: Trade-offs and downsides
+      description: Optional. What could get worse? Extra settings, slower hooks, more tokens in the session, more to maintain.
+    validations:
+      required: false

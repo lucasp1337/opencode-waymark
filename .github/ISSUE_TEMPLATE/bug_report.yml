@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in Waymark does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The more of the fields below you fill in, the faster it can be fixed.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe what you saw. Include the exact error or output if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest set of steps that shows the problem.
+      placeholder: |
+        1. Start opencode in a git repo
+        2. Run `/remember ...`
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: waymark-version
+    attributes:
+      label: Waymark version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: opencode-version
+    attributes:
+      label: opencode version
+      description: Output of `opencode --version`.
+      placeholder: "1.19.4"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Ubuntu 24.04, macOS 15, Windows 11 (WSL2), ..."
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and provider
+      description: Optional. Helps when the problem depends on how the agent behaves.
+      placeholder: "anthropic/..., ollama/..., ..."
+    validations:
+      required: false
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: |
+        The relevant lines from `~/.local/state/waymark/waymark.log` (or `$XDG_STATE_HOME/waymark/waymark.log`).
+        Please read it before pasting and remove anything private. Log lines can include memory text, file paths and repo names.
+      render: text
+    validations:
+      required: false

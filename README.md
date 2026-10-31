@@ -57,8 +57,12 @@ Nothing is written inside your repositories.
 
 ```sh
 bun install
-bun test            # unit tests
+bun run test        # unit tests + coverage
 bun run lint        # biome + knip
 bun run typecheck   # tsc --noEmit
 bun run test:live   # live contract tests against a real opencode (makes model calls)
 ```
+
+## Contributing
+
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers setup, checks and commit messages. Please report security issues privately as described in [SECURITY.md](SECURITY.md). Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
