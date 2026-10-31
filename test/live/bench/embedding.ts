@@ -1,6 +1,6 @@
 // Runs the embedding bench inside an opencode server process and prints each stage's result.
 // Usage: bun test/live/bench/embedding.ts
-import { createLiveEnv, probeLines, waitUntil } from "../harness";
+import { createLiveEnv, probeLines, removeOwnSandboxes, waitUntil } from "../harness";
 
 const DOWNLOAD_TIMEOUT_MS = 600_000;
 
@@ -14,5 +14,9 @@ try {
     console.log(JSON.stringify(line));
   }
 } finally {
-  await server.stop();
+  try {
+    await server.stop();
+  } finally {
+    removeOwnSandboxes();
+  }
 }

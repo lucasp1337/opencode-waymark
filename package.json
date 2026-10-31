@@ -27,8 +27,8 @@
   },
   "scripts": {
     "test": "bun test --coverage",
-    "test:live": "bun test test/live --path-ignore-patterns 'vendor/**' --timeout 240000",
-    "test:live:one": "bun test --path-ignore-patterns 'vendor/**' --timeout 240000",
+    "test:live": "bun test --preload ./test/live/cleanup.ts test/live --path-ignore-patterns 'vendor/**' --timeout 240000",
+    "test:live:one": "bun test --preload ./test/live/cleanup.ts --path-ignore-patterns 'vendor/**' --timeout 240000",
     "lint": "biome check . && knip",
     "typecheck": "tsc --noEmit"
   },
