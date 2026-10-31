@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fakeEmbedder } from "../../test/fake-embedder";
 import { createFakeHost } from "../../test/fake-host";
 import { memoryId } from "../../test/memory-id";
 import {
@@ -164,31 +163,6 @@ describe("dispose and the telemetry file", () => {
 
     expect(openBefore).toBe(true);
     expect(existsSync(log)).toBe(false);
-  });
-});
-
-describe("dispose with a loaded embedding model", () => {
-  const closing = { count: 0 };
-  const withModel = useRuntime({
-    embedder: {
-      ...fakeEmbedder([["anything"]]),
-      close: () => {
-        closing.count += 1;
-      },
-    },
-  });
-
-  test("closes the model once", async () => {
-    closing.count = 0;
-    const fx = withModel();
-    // The first search starts the model load; the second sees it loaded.
-    await fx.host.callTool("memory_search", { query: "anything" }, SESSION);
-    await fx.host.callTool("memory_search", { query: "anything" }, SESSION);
-
-    fx.runtime.dispose();
-    fx.runtime.dispose();
-
-    expect(closing.count).toBe(1);
   });
 });
 

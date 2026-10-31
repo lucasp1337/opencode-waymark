@@ -1,7 +1,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { monotonicFactory } from "ulid";
-import { loadTransformersEmbedder } from "./features/recall/embeddings/transformers-embedder";
+import {
+  processEmbedderSlot,
+  shareEmbedderLoad,
+} from "./features/recall/embeddings/shared-embedder";
+import {
+  EMBEDDING_MODEL,
+  loadTransformersEmbedder,
+} from "./features/recall/embeddings/transformers-embedder";
 import { isMemoryId, type MemoryId } from "./model/id";
 import type { RuntimeDeps } from "./runtime";
 import { processGit, processOriginUrl } from "./scope/git";
@@ -34,6 +41,10 @@ export function systemDeps(
         // Unref'd so a finished load does not keep the process alive for the rest of the delay.
         setTimeout(resolve, ms).unref();
       }),
-    loadEmbedder: () => loadTransformersEmbedder(join(dataDir, "models")),
+    // The first activation in the process fixes the cache dir; it is the same model either way.
+    loadEmbedder: shareEmbedderLoad(
+      () => loadTransformersEmbedder(join(dataDir, "models")),
+      processEmbedderSlot(EMBEDDING_MODEL),
+    ),
   };
 }

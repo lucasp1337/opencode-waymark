@@ -1,7 +1,7 @@
 import type { Tensor } from "@huggingface/transformers";
 import type { Embedder } from "../../../store/embedder";
 
-const MODEL = "Xenova/multilingual-e5-small";
+export const EMBEDDING_MODEL = "Xenova/multilingual-e5-small";
 
 // e5 models were trained with this prefix on both sides of a symmetric comparison, which is what
 // matching a memory against a query of the same kind of text is.
@@ -21,12 +21,12 @@ function rows(tensor: Tensor): Float32Array[] {
 // The only place that reaches the network: the first load downloads the model into `cacheDir`.
 export async function loadTransformersEmbedder(cacheDir: string): Promise<Embedder> {
   const { pipeline } = await import("@huggingface/transformers");
-  const extract = await pipeline("feature-extraction", MODEL, {
+  const extract = await pipeline("feature-extraction", EMBEDDING_MODEL, {
     dtype: "q8",
     cache_dir: cacheDir,
   });
   return {
-    model: MODEL,
+    model: EMBEDDING_MODEL,
     async embed(texts) {
       const vectors: Float32Array[] = [];
       for (let start = 0; start < texts.length; start += BATCH_SIZE) {
@@ -35,6 +35,5 @@ export async function loadTransformersEmbedder(cacheDir: string): Promise<Embedd
       }
       return vectors;
     },
-    close: () => extract.dispose(),
   };
 }

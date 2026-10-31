@@ -3,23 +3,6 @@ import type { LogLevel } from "../../../port";
 import type { Embedder } from "../../../store/embedder";
 import { createLazyEmbedder } from "./lazy-embedder";
 
-interface Closing extends Embedder {
-  readonly closed: { count: number };
-}
-
-function closableEmbedder(close?: () => Promise<void> | void): Closing {
-  const closed = { count: 0 };
-  return {
-    model: "fake",
-    embed: () => Promise.resolve([]),
-    closed,
-    close() {
-      closed.count += 1;
-      return close?.();
-    },
-  };
-}
-
 const embedder: Embedder = { model: "fake", embed: () => Promise.resolve([]) };
 
 // Lets every promise reaction queued so far run, without waiting for any time to pass.
@@ -155,42 +138,25 @@ describe("createLazyEmbedder", () => {
 });
 
 describe("closing a lazy embedder", () => {
-  test("closes a loaded embedder and reports unavailable from then on", async () => {
+  test("reports unavailable from then on, even after a successful load", async () => {
     const { lazy, load } = pendingLoad();
-    const model = closableEmbedder();
     lazy.request();
-    load.resolve(model);
+    load.resolve(embedder);
     await settled();
 
     lazy.close();
 
-    expect(model.closed.count).toBe(1);
     expect(lazy.request()).toEqual({ status: "unavailable", reason: "closed" });
   });
 
-  test("closing twice closes the embedder once", async () => {
+  test("an embedder that finishes loading after the close is not used", async () => {
     const { lazy, load } = pendingLoad();
-    const model = closableEmbedder();
-    lazy.request();
-    load.resolve(model);
-    await settled();
-
-    lazy.close();
-    lazy.close();
-
-    expect(model.closed.count).toBe(1);
-  });
-
-  test("an embedder that finishes loading after the close closes itself", async () => {
-    const { lazy, load } = pendingLoad();
-    const model = closableEmbedder();
     lazy.request();
 
     lazy.close();
-    load.resolve(model);
+    load.resolve(embedder);
     await settled();
 
-    expect(model.closed.count).toBe(1);
     expect(lazy.request()).toEqual({ status: "unavailable", reason: "closed" });
   });
 
@@ -213,32 +179,6 @@ describe("closing a lazy embedder", () => {
     expect(lazy.request()).toEqual({ status: "unavailable", reason: "closed" });
     await settled();
     expect(started.count).toBe(0);
-  });
-
-  test("closes an embedder that has nothing to free", async () => {
-    const { lazy, load } = pendingLoad();
-    lazy.request();
-    load.resolve(embedder);
-    await settled();
-
-    expect(() => lazy.close()).not.toThrow();
-  });
-
-  test("logs an embedder that fails to close, and still reports closed", async () => {
-    const { lazy, load, logs } = pendingLoad();
-    lazy.request();
-    load.resolve(
-      closableEmbedder(() => {
-        throw new Error("busy");
-      }),
-    );
-    await settled();
-
-    lazy.close();
-    await settled();
-
-    expect(logs.map((entry) => entry.data)).toEqual([{ error: "Error: busy" }]);
-    expect(lazy.request()).toEqual({ status: "unavailable", reason: "closed" });
   });
 
   test("settled resolves at once when no load was started", async () => {

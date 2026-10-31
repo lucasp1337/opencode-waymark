@@ -58,7 +58,7 @@ Waymark checks for near-duplicates when you save, and `memory_search` matches by
 - **Download:** on first activation, about 130 MB, once. After that it works offline.
 - **Disk:** the install also pulls the ONNX runtime (about 450 MB). With the model, plan for about 600 MB.
 - **Cache:** `$XDG_DATA_HOME/waymark/models/` (default `~/.local/share/waymark/models/`). Safe to delete; it is fetched again.
-- **Runtime:** runs locally on CPU, no GPU needed. Expect roughly 450 MB of RAM while it is loaded (measured with Bun, one process).
+- **Runtime:** runs locally on CPU, no GPU needed. Expect roughly 450 MB of RAM while it is loaded (measured with Bun). It is loaded once per process, however many projects are open, and stays loaded until the process exits.
 - **Offline or failed download:** Waymark logs a warning and falls back to text matching only. Memories still save and are found by words. It tries again at the next start.
 
 There is, currently, no setting to turn the model off.

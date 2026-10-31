@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { loadTransformersEmbedder } from "../../src/core/features/recall/embeddings/transformers-embedder";
 import { MIN_SIMILARITY } from "../../src/core/features/recall/retriever";
 import type { Embedder } from "../../src/core/store/embedder";
@@ -38,10 +38,6 @@ describe("embedding model", () => {
   // The first run downloads the model, so this needs network access and a generous timeout.
   beforeAll(async () => {
     embedder = await loadTransformersEmbedder(LIVE_MODEL_CACHE ?? tempDir());
-  });
-
-  afterAll(async () => {
-    await embedder?.close?.();
   });
 
   test("a Slovak paraphrase of a Slovak memory scores at or above the similarity floor", async () => {
