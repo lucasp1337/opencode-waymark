@@ -13,7 +13,8 @@ export interface LazyEmbedder {
   start(): void;
   // Resolves when the load in flight has succeeded or failed; at once if there is none. Never rejects.
   settled(): Promise<void>;
-  // Frees the model. A load that finishes after this frees itself. Idempotent.
+  // Stops answering with the model: a load that finishes after this is dropped. Idempotent. The
+  // model is shared across activations and stays loaded.
   close(): void;
 }
 
@@ -39,18 +40,8 @@ export function createLazyEmbedder(
   let state: EmbedderState | undefined;
   let loading: Promise<void> = Promise.resolve();
 
-  async function release(embedder: Embedder): Promise<void> {
-    try {
-      await embedder.close?.();
-    } catch (error) {
-      warn(log, "embedding model did not close cleanly", { error: String(error) });
-    }
-  }
-
   function loaded(embedder: Embedder): void {
-    if (state === CLOSED) {
-      void release(embedder);
-    } else {
+    if (state !== CLOSED) {
       state = { status: "ready", embedder };
     }
   }
@@ -81,11 +72,7 @@ export function createLazyEmbedder(
     },
     settled: () => loading,
     close() {
-      const previous = state;
       state = CLOSED;
-      if (previous?.status === "ready") {
-        void release(previous.embedder);
-      }
     },
   };
 }
