@@ -9,6 +9,10 @@ export type EmbedderState =
 export interface LazyEmbedder {
   // Starts loading on the first call, then answers at once with whatever the load has reached.
   request(): EmbedderState;
+  // Begins loading now if it has not begun, for callers that do not need the state yet.
+  start(): void;
+  // Resolves when the load in flight has succeeded or failed; at once if there is none. Never rejects.
+  settled(): Promise<void>;
   // Frees the model. A load that finishes after this frees itself. Idempotent.
   close(): void;
 }
@@ -26,13 +30,14 @@ function warn(log: HostPort["log"], msg: string, data: object): void {
   }
 }
 
-// The model is only fetched once somebody searches. A failed load is not retried until the next
-// activation, so an offline machine does not retry a download on every search.
+// The load starts on the first request, which the runtime makes at activation. A failed load is not
+// retried until the next activation, so an offline machine does not retry a download on every search.
 export function createLazyEmbedder(
   load: () => Promise<Embedder>,
   log: HostPort["log"],
 ): LazyEmbedder {
   let state: EmbedderState | undefined;
+  let loading: Promise<void> = Promise.resolve();
 
   async function release(embedder: Embedder): Promise<void> {
     try {
@@ -60,15 +65,21 @@ export function createLazyEmbedder(
     }
   }
 
+  function request(): EmbedderState {
+    if (state === undefined) {
+      state = LOADING;
+      // Through then, so a load that throws before returning a promise also counts as failed.
+      loading = Promise.resolve().then(load).then(loaded, failed);
+    }
+    return state;
+  }
+
   return {
-    request() {
-      if (state === undefined) {
-        state = LOADING;
-        // Through then, so a load that throws before returning a promise also counts as failed.
-        Promise.resolve().then(load).then(loaded, failed);
-      }
-      return state;
+    request,
+    start() {
+      request();
     },
+    settled: () => loading,
     close() {
       const previous = state;
       state = CLOSED;

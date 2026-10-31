@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { fakeEmbedder } from "../../test/fake-embedder";
 import { FIRST_ID, SESSION, useRuntime } from "../../test/runtime-fixture";
 import { INSTRUCTIONS } from "./features/recall/instructions";
+import type { Embedder } from "./store/embedder";
 
 const runtime = useRuntime();
 const withReviewers = useRuntime({ options: { subagents: ["reviewer"] } });
@@ -240,5 +241,92 @@ describe("duplicates across languages", () => {
 
     expect(reply).toStartWith("Not saved yet: related memories exist.");
     expect(reply).toContain(`[${FIRST_ID}] fact`);
+  });
+});
+
+// Lets every promise reaction queued so far run, without waiting for any time to pass.
+function settled(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+describe("a save while the model is still loading", () => {
+  const english = {
+    kind: "fact",
+    scope: "repo",
+    title: "The deploy script must run from the repository root",
+    body: "Subdirectories break its relative paths.",
+  };
+  const slovak = {
+    kind: "fact",
+    scope: "repo",
+    title: "Skript na nasadenie sa musí spúšťať z koreňa repozitára",
+    body: "Inak sa rozbijú cesty.",
+  };
+  const model = fakeEmbedder([[english.title, slovak.title]]);
+  function slowModel() {
+    const loads: PromiseWithResolvers<Embedder>[] = [];
+    const timeout = Promise.withResolvers<void>();
+    return {
+      loads,
+      timeout,
+      loadEmbedder: () => {
+        const load = Promise.withResolvers<Embedder>();
+        loads.push(load);
+        return load.promise;
+      },
+      sleep: () => timeout.promise,
+    };
+  }
+  const withSlowModel = useRuntime(slowModel);
+
+  // A second activation over a data dir that already holds the English memory.
+  async function restartedWithEnglishSaved() {
+    const first = withSlowModel();
+    const saving = first.host.callTool("memory_save", english, SESSION);
+    await settled();
+    first.setup.loads[0]?.resolve(model);
+    await saving;
+    const fx = first.restart();
+    await settled();
+    return { fx, loads: first.setup.loads, timeout: first.setup.timeout };
+  }
+
+  test("the model starts loading at activation, before any tool or hook runs", async () => {
+    const { setup } = withSlowModel();
+    await settled();
+
+    expect(setup.loads).toHaveLength(1);
+  });
+
+  test("waits for the load and then finds the paraphrase by meaning", async () => {
+    const { fx, loads } = await restartedWithEnglishSaved();
+
+    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    loads[1]?.resolve(model);
+
+    expect(await saving).toStartWith("Not saved yet: related memories exist.");
+  });
+
+  test("saves after the bound elapses without a model", async () => {
+    const { fx, timeout } = await restartedWithEnglishSaved();
+
+    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    await settled();
+    timeout.resolve();
+
+    expect(await saving).toStartWith("Saved");
+  });
+
+  test("saves, and logs the failure once, when the model cannot load", async () => {
+    const { fx, loads } = await restartedWithEnglishSaved();
+
+    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    loads[1]?.reject(new Error("offline"));
+    const reply = await saving;
+
+    expect(reply).toStartWith("Saved");
+    expect(
+      fx.host.logs.filter((entry) => entry.msg.startsWith("embedding model unavailable")),
+    ).toHaveLength(1);
   });
 });

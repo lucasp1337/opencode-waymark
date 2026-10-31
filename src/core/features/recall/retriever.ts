@@ -4,15 +4,18 @@ import type { RelatedQuery } from "../../store/cache";
 import { type Embedder, EmbeddingShapeError } from "../../store/embedder";
 import type { MemoryStore } from "../../store/memory-store";
 import type { VectorIndex } from "../../store/vector-index";
-import type { LazyEmbedder } from "./embeddings/lazy-embedder";
+import type { EmbedderState, LazyEmbedder } from "./embeddings/lazy-embedder";
 import { fuseRankings } from "./rank-fusion";
 
 const RANKING_DEPTH = 20;
 
-// A meaning match must be close to count at all; otherwise every search, and every save's
-// duplicate check, would return the nearest memory however unrelated. e5 puts paraphrases around
-// 0.9 and unrelated text around 0.7–0.8; the value is not yet calibrated on this model.
-const MIN_SIMILARITY = 0.85;
+// Meaning matches below this are unrelated within one language; the live embedding-model test
+// guards the value.
+export const MIN_SIMILARITY = 0.91;
+
+// How long a save waits for a model that is still loading before checking for duplicates by words
+// alone. A cached model loads in a second or two; a download is not worth holding a save for.
+const MODEL_WAIT_MS = 5000;
 
 // Whether meaning took part in a search, and if not, why.
 type MeaningSearch = "used" | "loading" | "unavailable";
@@ -26,16 +29,22 @@ export interface SearchResult {
   readonly meaning: MeaningSearch;
 }
 
+interface SearchOptions {
+  // Wait up to MODEL_WAIT_MS for a model still loading, instead of answering by words at once.
+  readonly waitForModel?: boolean;
+}
+
 export interface Retriever {
   // Text matching, plus meaning once the model is loaded. Loading and embedding are slow, so only
   // tools call this, never hooks.
-  search(query: SearchQuery): Promise<SearchResult>;
+  search(query: SearchQuery, options?: SearchOptions): Promise<SearchResult>;
 }
 
 interface RetrieverDeps {
   readonly store: MemoryStore;
   readonly vectors: VectorIndex;
-  readonly embedder: Pick<LazyEmbedder, "request">;
+  readonly embedder: Pick<LazyEmbedder, "request" | "settled">;
+  readonly sleep: (ms: number) => Promise<void>;
   readonly log: HostPort["log"];
 }
 
@@ -84,11 +93,22 @@ async function rankByMeaning(
     .map((entry) => entry.memory);
 }
 
+async function modelState(deps: RetrieverDeps, waitForModel: boolean): Promise<EmbedderState> {
+  const state = deps.embedder.request();
+  if (!waitForModel || state.status !== "loading") {
+    return state;
+  }
+  // The injected sleep's timer is unref'd, so when the load wins the race the pending timer never
+  // holds the process open.
+  await Promise.race([deps.embedder.settled(), deps.sleep(MODEL_WAIT_MS)]);
+  return deps.embedder.request();
+}
+
 export function createRetriever(deps: RetrieverDeps): Retriever {
   return {
-    async search(query) {
+    async search(query, { waitForModel = false } = {}) {
       const byText = deps.store.related({ ...query, limit: RANKING_DEPTH });
-      const state = deps.embedder.request();
+      const state = await modelState(deps, waitForModel);
       if (state.status !== "ready") {
         return { memories: byText.slice(0, query.limit), meaning: state.status };
       }

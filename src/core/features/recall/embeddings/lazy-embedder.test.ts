@@ -240,4 +240,43 @@ describe("closing a lazy embedder", () => {
     expect(logs.map((entry) => entry.data)).toEqual([{ error: "Error: busy" }]);
     expect(lazy.request()).toEqual({ status: "unavailable", reason: "closed" });
   });
+
+  test("settled resolves at once when no load was started", async () => {
+    const { lazy, started } = pendingLoad();
+
+    await lazy.settled();
+
+    expect(started.count).toBe(0);
+  });
+
+  test("start begins the load once, however often it is called", async () => {
+    const { lazy, started } = pendingLoad();
+
+    lazy.start();
+    lazy.start();
+    await settled();
+
+    expect(started.count).toBe(1);
+    expect(lazy.request()).toEqual({ status: "loading" });
+  });
+
+  test("settled resolves after a failed load without rejecting", async () => {
+    const { load, lazy } = pendingLoad();
+    lazy.request();
+    load.reject(new Error("offline"));
+
+    await lazy.settled();
+
+    expect(lazy.request().status).toBe("unavailable");
+  });
+
+  test("settled resolves once the load has produced the embedder", async () => {
+    const { load, lazy } = pendingLoad();
+    lazy.request();
+    load.resolve(embedder);
+
+    await lazy.settled();
+
+    expect(lazy.request().status).toBe("ready");
+  });
 });

@@ -214,6 +214,7 @@ function depsIn(dataDir: string): RuntimeDeps {
     now: () => new Date(0),
     newId: () => memoryId(ID),
     loadEmbedder: () => Promise.reject(new Error("no model in this test")),
+    sleep: () => Promise.resolve(),
     options: undefined,
   };
 }

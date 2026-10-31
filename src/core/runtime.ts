@@ -46,8 +46,10 @@ export interface RuntimeDeps {
   readonly originUrl: AsyncOriginUrl;
   readonly now: () => Date;
   readonly newId: () => MemoryId;
-  // Loads the local embedding model; called at most once, on the first search.
+  // Loads the local embedding model; called at most once, in the background from activation.
   readonly loadEmbedder: () => Promise<Embedder>;
+  // Resolves after the delay; bounds how long a save waits for the model.
+  readonly sleep: (ms: number) => Promise<void>;
   // The plugin options from the user's opencode config, unparsed.
   readonly options: unknown;
 }
@@ -113,7 +115,7 @@ function toolDepsOf(wiring: Wiring): ToolDeps {
     newId: deps.newId,
     // Read per save, so a cap raised with memory_config applies at once.
     caps: () => config.current().caps,
-    retriever: createRetriever({ store, vectors, embedder, log: host.log }),
+    retriever: createRetriever({ store, vectors, embedder, sleep: deps.sleep, log: host.log }),
   };
 }
 
@@ -311,6 +313,8 @@ export function createRuntime(host: HostPort, deps: RuntimeDeps): Runtime {
     }
     const embedder = createLazyEmbedder(deps.loadEmbedder, host.log);
     open.push(embedder);
+    // Loads in the background so the first save already has the model; activation does not wait.
+    embedder.start();
     const counters = openCounters(host, deps);
     open.push(counters);
     wire(host, deps, { store, vectors, embedder, counters });

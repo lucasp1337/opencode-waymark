@@ -133,6 +133,60 @@ describe("a search while the model is not ready", () => {
   });
 });
 
+describe("a search that waits for the model", () => {
+  const wait = { waitForModel: true };
+
+  function loadingModel() {
+    const load = Promise.withResolvers<Embedder>();
+    const timeout = Promise.withResolvers<void>();
+    const lazy = createLazyEmbedder(
+      () => load.promise,
+      () => undefined,
+    );
+    const { store, retriever } = fixture(lazy, () => timeout.promise);
+    saveAll(store, [rootRule]);
+    return { load, timeout, retriever };
+  }
+
+  test("uses meaning when the model finishes loading within the bound", async () => {
+    const { load, retriever } = loadingModel();
+
+    const search = retriever.search({ text: SLOVAK_QUERY, scopes: [USER], limit: 5 }, wait);
+    load.resolve(fakeEmbedder([ROOT_RULE]));
+    const result = await search;
+
+    expect([result.meaning, ids(result.memories)]).toEqual(["used", [rootRule.id]]);
+  });
+
+  test("finds by words only when the bound elapses before the model is ready", async () => {
+    const { timeout, retriever } = loadingModel();
+
+    const search = retriever.search({ text: SLOVAK_QUERY, scopes: [USER], limit: 5 }, wait);
+    timeout.resolve();
+    const result = await search;
+
+    expect([result.meaning, ids(result.memories)]).toEqual(["loading", []]);
+  });
+
+  test("finds by words only, without hanging, when the load fails", async () => {
+    const { load, retriever } = loadingModel();
+
+    const search = retriever.search({ text: "repository root", scopes: [USER], limit: 5 }, wait);
+    load.reject(new Error("offline"));
+    const result = await search;
+
+    expect([result.meaning, ids(result.memories)]).toEqual(["unavailable", [rootRule.id]]);
+  });
+
+  test("a search that does not ask to wait answers at once while the model loads", async () => {
+    const { retriever } = loadingModel();
+
+    const result = await retriever.search({ text: SLOVAK_QUERY, scopes: [USER], limit: 5 });
+
+    expect(result.meaning).toBe("loading");
+  });
+});
+
 describe("a search where meaning fails", () => {
   test("falls back to words, says meaning is unavailable and logs when embedding fails", async () => {
     const broken: Embedder = { model: "broken", embed: () => Promise.reject(new Error("oom")) };
@@ -172,6 +226,7 @@ describe("a search where meaning fails", () => {
       store,
       vectors: wrongSize,
       embedder: ready(fakeEmbedder([ROOT_RULE, BACKUPS])),
+      sleep: () => Promise.resolve(),
       log: host.log,
     });
 

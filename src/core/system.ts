@@ -29,6 +29,11 @@ export function systemDeps(
     originUrl: processOriginUrl,
     now,
     newId,
+    sleep: (ms) =>
+      new Promise((resolve) => {
+        // Unref'd so a finished load does not keep the process alive for the rest of the delay.
+        setTimeout(resolve, ms).unref();
+      }),
     loadEmbedder: () => loadTransformersEmbedder(join(dataDir, "models")),
   };
 }

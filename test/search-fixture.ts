@@ -23,12 +23,15 @@ export interface SearchFixture {
 }
 
 // A lazy embedder that is stuck in one state, so a test decides what the model is doing.
-export function embedderIn(state: EmbedderState): Pick<LazyEmbedder, "request"> {
-  return { request: () => state };
+export function embedderIn(state: EmbedderState): Pick<LazyEmbedder, "request" | "settled"> {
+  return { request: () => state, settled: () => Promise.resolve() };
 }
 
 // Retrievers over a real store and vector index in a temp dir, closed and deleted after each test.
-export function useSearchFixture(): (embedder: Pick<LazyEmbedder, "request">) => SearchFixture {
+export function useSearchFixture(): (
+  embedder: Pick<LazyEmbedder, "request" | "settled">,
+  sleep?: (ms: number) => Promise<void>,
+) => SearchFixture {
   const tempRoot = useTempDirs();
   const opened: Array<MemoryStore | VectorIndex> = [];
   afterEach(() => {
@@ -36,7 +39,7 @@ export function useSearchFixture(): (embedder: Pick<LazyEmbedder, "request">) =>
       resource.close();
     }
   });
-  return (embedder) => {
+  return (embedder, sleep = () => Promise.resolve()) => {
     const root = tempRoot();
     const { store } = openMemoryStore(root, nodeFileSystem, {
       onCacheFailure: rethrowCacheFailure,
@@ -44,7 +47,7 @@ export function useSearchFixture(): (embedder: Pick<LazyEmbedder, "request">) =>
     const { index: vectors } = openVectorIndex(join(root, "vectors.sqlite"));
     opened.push(store, vectors);
     const host = createFakeHost();
-    const retriever = createRetriever({ store, vectors, embedder, log: host.log });
+    const retriever = createRetriever({ store, vectors, embedder, sleep, log: host.log });
     return { host, store, retriever };
   };
 }

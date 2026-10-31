@@ -85,6 +85,10 @@ interface RuntimeSetup {
   readonly capabilities?: Capabilities;
   // Without one the model never finishes loading, so retrieval is by words only.
   readonly embedder?: Embedder;
+  // Replaces the embedder's load, so a test controls when it finishes or fails.
+  readonly loadEmbedder?: () => Promise<Embedder>;
+  // How a save's wait for the model ends; by default it ends at once.
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 function embedderFor(setup: RuntimeSetup): Promise<Embedder> {
@@ -107,7 +111,8 @@ function start(activation: Activation): RuntimeFixture {
     now: clock.now,
     newId,
     options: activation.setup.options,
-    loadEmbedder: () => embedderFor(activation.setup),
+    loadEmbedder: activation.setup.loadEmbedder ?? (() => embedderFor(activation.setup)),
+    sleep: activation.setup.sleep ?? (() => Promise.resolve()),
   });
   const fixture: RuntimeFixture = {
     host,
@@ -124,8 +129,15 @@ function start(activation: Activation): RuntimeFixture {
 }
 
 // Runtimes over a fresh temp data dir with a fake clock and fake ids, disposed and deleted after
-// each test.
-export function useRuntime(setup: RuntimeSetup = {}): () => RuntimeFixture {
+// each test. Given a function, each runtime gets a setup of its own, which the first fixture
+// exposes as `setup` so a test can drive what the setup created.
+export function useRuntime(setup?: RuntimeSetup): () => RuntimeFixture;
+export function useRuntime<T extends RuntimeSetup>(
+  makeSetup: () => T,
+): () => RuntimeFixture & { readonly setup: T };
+export function useRuntime(
+  setup: RuntimeSetup | (() => RuntimeSetup) = {},
+): () => RuntimeFixture & { readonly setup: RuntimeSetup } {
   const started: RuntimeFixture[] = [];
   afterEach(() => {
     for (const fixture of started.splice(0)) {
@@ -133,12 +145,15 @@ export function useRuntime(setup: RuntimeSetup = {}): () => RuntimeFixture {
       rmSync(fixture.dataDir, { recursive: true, force: true });
     }
   });
-  return () =>
-    start({
+  return () => {
+    const own = typeof setup === "function" ? setup() : setup;
+    const fixture = start({
       dataDir: mkdtempSync(join(tmpdir(), "waymark-runtime-")),
       clock: fakeClock(),
       newId: fakeIds(),
       started,
-      setup,
+      setup: own,
     });
+    return Object.assign(fixture, { setup: own });
+  };
 }

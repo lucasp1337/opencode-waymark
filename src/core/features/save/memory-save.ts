@@ -94,11 +94,10 @@ async function relatedTo(
   { title, body }: ValidContent,
   scopes: ScopeChain,
 ): Promise<Memory[]> {
-  const found = await deps.retriever.search({
-    text: `${title}\n${body}`,
-    scopes,
-    limit: RELATED_LIMIT,
-  });
+  const found = await deps.retriever.search(
+    { text: `${title}\n${body}`, scopes, limit: RELATED_LIMIT },
+    { waitForModel: true },
+  );
   return found.memories;
 }
 
