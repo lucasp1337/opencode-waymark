@@ -14,6 +14,8 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # The npm trusted publisher only accepts this environment, which only deploys v* tags.
+    environment: npm
     permissions:
       contents: write # create the GitHub release
       id-token: write # npm trusted publishing and provenance
