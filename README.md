@@ -1,4 +1,6 @@
-# Waymark
+<p align="center">
+  <img src="docs/assets/banner.png" alt="Waymark: persistent, local-only memory for opencode agents" width="100%">
+</p>
 
 An [opencode](https://opencode.ai) plugin that gives agents persistent, local-only memory across sessions.
 
