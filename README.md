@@ -2,7 +2,24 @@
   <img src="docs/assets/banner.png" alt="Waymark: persistent, local-only memory for opencode agents" width="100%">
 </p>
 
-An [opencode](https://opencode.ai) plugin that gives agents persistent, local-only memory across sessions.
+<p align="center">
+  <a href="https://github.com/lucasp1337/opencode-waymark/actions/workflows/ci.yml"><img src="https://github.com/lucasp1337/opencode-waymark/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/opencode-waymark"><img src="https://img.shields.io/npm/v/opencode-waymark?color=3F6B4F" alt="npm version"></a>
+  <a href="https://opencode.ai"><img src="https://img.shields.io/badge/opencode-1.19.4-3F6B4F" alt="opencode 1.19.4"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/lucasp1337/opencode-waymark?color=3F6B4F" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  An <a href="https://opencode.ai">opencode</a> plugin that gives agents persistent, local-only memory across sessions.
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="docs/guide.md">Guide</a> ·
+  <a href="#data">Where data lives</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
 ## Compatibility
 
