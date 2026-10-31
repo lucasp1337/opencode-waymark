@@ -9,8 +9,13 @@ Save (memory_save) what a future session would otherwise rediscover:
   - if it must be known BEFORE acting, save it as a rule, not a gotcha
 - a decision and its reason
 
+Save when it happens, not at the end of the task; on "remember", "from now on" or any explicit ask, in that same turn.
+
 Never save: what reading the code, git log, AGENTS.md or README reveals; task progress;
 one-off details about a single file or line.
+Never copy a secret (token, password, key, connection string) into any memory field, even
+when the user asks you to remember it. Save only where it lives (a reference), never the
+value. For other people's personal data, save at most a pointer to where it lives.
 
 Scope: would this hold in another repo of the same org?
 yes -> org (or user, if it is about the person) / only these linked repos -> product / else repo.
