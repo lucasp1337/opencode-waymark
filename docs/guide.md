@@ -1,4 +1,4 @@
-# Commands
+# Waymark guide
 
 Hi, and welcome. Waymark gives your agent a memory that survives between sessions, so you stop repeating yourself. This page explains the words it uses, then lists every command.
 
