@@ -171,9 +171,11 @@ function subagentsOf({ host, deps, config }: Wiring): () => readonly string[] {
 }
 
 function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf) {
-  const { host, deps, store, counters, config } = wiring;
+  const { host, deps, store, counters, config, registryFile, registryFs } = wiring;
   const blocks = createSessionBlocks({
     store,
+    fs: registryFs,
+    registryFile,
     recallScope,
     indexLines: () => config.current().indexLines,
     indexExit: () => config.current().indexExit,

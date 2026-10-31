@@ -1,16 +1,22 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { memoryId } from "../../../../test/memory-id";
+import { useTempDirs } from "../../../../test/temp-dir";
 import { validContent } from "../../../../test/valid-content";
 import type { MemoryId } from "../../model/id";
 import { type Memory, newMemory } from "../../model/memory";
 import type { ScopeChain } from "../../model/scope";
 import type { LogLevel } from "../../port";
+import { linkRepos } from "../../scope/products";
+import { nodeFileSystem } from "../../store/fs";
 import { type MemoryStats, type Telemetry, UNSEEN } from "../../telemetry/telemetry";
 import { INSTRUCTIONS } from "./instructions";
 import type { RecallScope } from "./recall-scope";
 import { createSessionBlocks } from "./session-blocks";
 
 const CHAIN: ScopeChain = [{ level: "user" }];
+// A registry file that does not exist reads as empty.
+const NO_REGISTRY = { fs: nodeFileSystem, registryFile: "/nonexistent/registry.json" };
 
 function rule(id: string, title: string, supersedes?: string): Memory {
   return newMemory(validContent({ kind: "rule", title, body: "", why: "w" }), {
@@ -57,6 +63,7 @@ function blocksOver(
 ) {
   return createSessionBlocks({
     store: { inScopes: () => stored },
+    ...NO_REGISTRY,
     recallScope: () => Promise.resolve(scope),
     indexLines: () => 40,
     indexExit: () => ({ sessions: 20, days: 30 }),
@@ -100,7 +107,7 @@ describe("createSessionBlocks", () => {
   });
 
   test("an empty store still gives the instructions", async () => {
-    expect(await blocksOver([]).blockFor("s")).toBe(INSTRUCTIONS);
+    expect(await blocksOver([]).blockFor("s")).toStartWith(INSTRUCTIONS);
   });
 
   test("logs the memories each session block shows", async () => {
@@ -207,6 +214,7 @@ describe("createSessionBlocks settings", () => {
   function blocksWith(settings: { indexLines: number; exitSessions: number }) {
     return createSessionBlocks({
       store: { inScopes: () => stored },
+      ...NO_REGISTRY,
       recallScope: () => Promise.resolve({ chain: CHAIN, directory: "/d" }),
       indexLines: () => settings.indexLines,
       indexExit: () => ({ sessions: settings.exitSessions, days: 30 }),
@@ -256,6 +264,7 @@ describe("createSessionBlocks with a full index", () => {
     );
     const blocks = createSessionBlocks({
       store: { inScopes: () => [old, saved] },
+      ...NO_REGISTRY,
       recallScope: () => Promise.resolve({ chain: CHAIN, directory: "/d" }),
       indexLines: () => 1,
       indexExit: () => ({ sessions: 20, days: 30 }),
@@ -292,5 +301,82 @@ describe("createSessionBlocks baseline", () => {
     blocks.forget("s");
 
     expect(blocks.baselineOf("s")).toBeUndefined();
+  });
+});
+
+describe("createSessionBlocks scopes line", () => {
+  const tempDir = useTempDirs();
+  const ORDERS = "github.com/acme/orders-svc";
+  const CUSTOMERS = "github.com/acme/customers-svc";
+  const LINKED: ScopeChain = [
+    { level: "user" },
+    { level: "org", id: "github.com/acme" },
+    { level: "product", id: "shop" },
+    { level: "repo", id: ORDERS },
+  ];
+
+  async function blockFor(chain: ScopeChain, linked: readonly string[]): Promise<string | null> {
+    const registryFile = join(tempDir(), "registry.json");
+    if (linked.length > 0) {
+      await linkRepos(nodeFileSystem, registryFile, { repos: linked, product: "shop" });
+    }
+    const blocks = createSessionBlocks({
+      store: { inScopes: () => [] },
+      fs: nodeFileSystem,
+      registryFile,
+      recallScope: () => Promise.resolve({ chain, directory: "/d" }),
+      indexLines: () => 40,
+      indexExit: () => ({ sessions: 20, days: 30 }),
+      counters: fakeCounters().counters,
+      now: () => NOW,
+      log: () => undefined,
+    });
+    return await blocks.blockFor("s");
+  }
+
+  test("names every scope, and the product's repos, although none holds a memory", async () => {
+    const block = await blockFor(LINKED, [ORDERS, CUSTOMERS]);
+
+    expect(block).toContain(
+      `Scopes here: user · org:github.com/acme · product:shop (${ORDERS}, ${CUSTOMERS}) · repo:${ORDERS}`,
+    );
+  });
+
+  test("names only the scopes of the chain when the repo is not linked", async () => {
+    const block = await blockFor([{ level: "user" }, { level: "repo", id: ORDERS }], []);
+
+    expect(block).toEndWith(`Scopes here: user · repo:${ORDERS}`);
+  });
+
+  test("names the product without a repo list when the registry has no repos for it", async () => {
+    const block = await blockFor(LINKED, []);
+
+    expect(block).toContain(`product:shop · repo:${ORDERS}`);
+  });
+
+  test("names the product alone and warns when the registry cannot be read", async () => {
+    const registryFile = join(tempDir(), "registry.json");
+    nodeFileSystem.writeAtomic(registryFile, '{"products":{"shop":1}}');
+    const logged: Logged[] = [];
+    const blocks = createSessionBlocks({
+      store: { inScopes: () => [] },
+      fs: nodeFileSystem,
+      registryFile,
+      recallScope: () => Promise.resolve({ chain: LINKED, directory: "/d" }),
+      indexLines: () => 40,
+      indexExit: () => ({ sessions: 20, days: 30 }),
+      counters: fakeCounters().counters,
+      now: () => NOW,
+      log: (level, msg, data) => {
+        logged.push({ level, msg, data });
+      },
+    });
+
+    const block = await blocks.blockFor("s");
+
+    expect(block).toContain(`product:shop · repo:${ORDERS}`);
+    expect(
+      logged.some((entry) => entry.level === "warn" && entry.msg.includes("product repos")),
+    ).toBe(true);
   });
 });

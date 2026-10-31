@@ -1,6 +1,10 @@
 import { isIndexed } from "../../model/kind";
 import { activeOnly } from "../../model/memory";
+import { type ScopeChain, scopeAt } from "../../model/scope";
 import type { HostPort } from "../../port";
+import { productRepos } from "../../scope/products";
+import { catchRegistryIo } from "../../scope/registry-file";
+import type { FileSystem } from "../../store/fs";
 import type { MemoryStore } from "../../store/memory-store";
 import type { Telemetry } from "../../telemetry/telemetry";
 import type { IndexExitThresholds } from "../lifecycle/lifecycle-settings";
@@ -10,6 +14,8 @@ import { renderSessionBlock } from "./session-block";
 
 interface SessionBlockDeps {
   readonly store: Pick<MemoryStore, "inScopes">;
+  readonly fs: FileSystem;
+  readonly registryFile: string;
   readonly recallScope: (sessionID: string) => Promise<RecallScope | null>;
   // Read per rendering, so a changed setting applies to the next session without a restart.
   readonly indexLines: () => number;
@@ -17,6 +23,19 @@ interface SessionBlockDeps {
   readonly counters: Pick<Telemetry, "stats" | "recordSessions">;
   readonly now: () => Date;
   readonly log: HostPort["log"];
+}
+
+function productReposOf(deps: SessionBlockDeps, chain: ScopeChain): readonly string[] {
+  const product = scopeAt(chain, "product");
+  if (product?.level !== "product") {
+    return [];
+  }
+  const repos = catchRegistryIo(() => productRepos(deps.fs, deps.registryFile, product.id));
+  if (!repos.ok) {
+    deps.log("warn", "product repos not listed in session block", { error: repos.error });
+    return [];
+  }
+  return repos.value;
 }
 
 async function render(
@@ -35,6 +54,7 @@ async function render(
   const usage = { stats: deps.counters.stats(indexed), now: deps.now(), exit: deps.indexExit() };
   const block = renderSessionBlock({
     chain: scope.chain,
+    productRepos: productReposOf(deps, scope.chain),
     memories,
     indexLines: deps.indexLines(),
     usage,

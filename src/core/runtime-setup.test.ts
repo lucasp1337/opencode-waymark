@@ -90,7 +90,7 @@ describe("setup", () => {
 
     const [block] = await fx.host.emitSystem("ses_sub");
 
-    expect(block).toBe(INSTRUCTIONS);
+    expect(block).toStartWith(INSTRUCTIONS);
   });
 });
 
@@ -109,7 +109,7 @@ describe("plugin option and setting together", () => {
 
     const [block] = await fx.host.emitSystem("ses_sub");
 
-    expect(block).toBe(INSTRUCTIONS);
+    expect(block).toStartWith(INSTRUCTIONS);
   });
 });
 

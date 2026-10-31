@@ -25,11 +25,13 @@ function memory(content: ContentInput, { n, scope, updated }: Fixture): Memory {
   });
 }
 
+const SCOPES_LINE = "Scopes here: user · org:github.com/acme · repo:github.com/acme/api";
+
 const NOW = new Date("2026-03-01T10:00:00.000Z");
 const NO_USAGE: IndexUsage = { stats: new Map(), now: NOW, exit: { sessions: 20, days: 30 } };
 
 function render(memories: Memory[], indexLines = 40, usage: IndexUsage = NO_USAGE): string {
-  return renderSessionBlock({ chain: CHAIN, memories, indexLines, usage }).text;
+  return renderSessionBlock({ chain: CHAIN, productRepos: [], memories, indexLines, usage }).text;
 }
 
 describe("renderSessionBlock", () => {
@@ -37,8 +39,8 @@ describe("renderSessionBlock", () => {
     expect(render([]).startsWith(INSTRUCTIONS)).toBe(true);
   });
 
-  test("is only the instruction text when there is nothing to show", () => {
-    expect(render([])).toBe(INSTRUCTIONS);
+  test("is only the instructions and the scopes line when there is nothing to show", () => {
+    expect(render([])).toBe(`${INSTRUCTIONS}\n\n${SCOPES_LINE}`);
   });
 
   test("shows rules, then preferences, then the index", () => {
@@ -211,7 +213,7 @@ describe("renderSessionBlock", () => {
       ),
     ]);
 
-    expect(text).toBe(INSTRUCTIONS);
+    expect(text).toBe(`${INSTRUCTIONS}\n\n${SCOPES_LINE}`);
   });
 
   test("reports exactly the memories it shows", () => {
@@ -231,6 +233,7 @@ describe("renderSessionBlock", () => {
 
     const { shown } = renderSessionBlock({
       chain: CHAIN,
+      productRepos: [],
       memories: [shownRule, hiddenGotcha, cutFact, keptFact],
       indexLines: 1,
       usage: NO_USAGE,

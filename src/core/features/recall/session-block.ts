@@ -6,9 +6,12 @@ import { type IndexUsage, visibleIndex } from "../lifecycle/index-exit";
 import { appliesLines, datedTitle } from "../memory-line";
 import { alwaysOnText } from "./always-on";
 import { INSTRUCTIONS } from "./instructions";
+import { scopesLine } from "./scopes-line";
 
 interface BlockInput {
   readonly chain: ScopeChain;
+  // The repos linked to the chain's product; empty when it has none.
+  readonly productRepos: readonly string[];
   // Active memories on the chain; superseded ones are already left out.
   readonly memories: readonly Memory[];
   readonly indexLines: number;
@@ -51,8 +54,8 @@ interface SessionBlock {
   readonly shown: readonly MemoryId[];
 }
 
-// The fixed instructions, then each always-on kind in full (rules before preferences), then the
-// index of facts and decisions.
+// The fixed instructions, the session's scopes, then each always-on kind in full (rules before
+// preferences), then the index of facts and decisions.
 export function renderSessionBlock(input: BlockInput): SessionBlock {
   const keys = new Set(input.chain.map(scopeKey));
   const onChain = input.memories.filter((memory) => keys.has(scopeKey(memory.scope)));
@@ -62,6 +65,8 @@ export function renderSessionBlock(input: BlockInput): SessionBlock {
   const index = visibleIndex(onChain, input.usage).slice(0, input.indexLines);
   const text = [
     INSTRUCTIONS,
+    "",
+    scopesLine(input.chain, input.productRepos),
     ...alwaysOnKinds.flatMap((kind) =>
       section(
         `### ${plural(kind)}`,

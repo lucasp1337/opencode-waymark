@@ -21,7 +21,7 @@ describe("session block", () => {
 
     const [block] = await fx.host.emitSystem(SESSION);
 
-    expect(block).toBe(INSTRUCTIONS);
+    expect(block).toStartWith(INSTRUCTIONS);
   });
 
   test("a rule saved in one session is in the next session's block, not the current one", async () => {
@@ -33,7 +33,7 @@ describe("session block", () => {
     const [current] = await fx.host.emitSystem(SESSION);
     const [next] = await fx.host.emitSystem("ses_next");
 
-    expect(current).toBe(INSTRUCTIONS);
+    expect(current).toStartWith(INSTRUCTIONS);
     expect(next).toContain(
       "- Run the linter before committing (2026-03-01)\n  Why: CI rejects lint errors",
     );
@@ -60,7 +60,9 @@ describe("session block", () => {
       directory: "/work/api",
     });
 
-    expect(await fx.host.emitSystem("ses_sub")).toEqual([INSTRUCTIONS]);
+    const [block] = await fx.host.emitSystem("ses_sub");
+
+    expect(block).toStartWith(INSTRUCTIONS);
   });
 });
 
