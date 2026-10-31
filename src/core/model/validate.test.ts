@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { validContent } from "../../../test/valid-content";
+import { MAX_HOW_TO_APPLY_LENGTH } from "./kind";
 import { MAX_LOCATOR_LENGTH } from "./locator";
 import type { MemoryContent } from "./memory";
 import type { Result } from "./result";
@@ -20,6 +21,75 @@ function problems(input: unknown): string[] {
   const result = parseContent(input);
   return result.ok ? [] : result.error;
 }
+
+describe("howToApply", () => {
+  const rule = { kind: "rule", title: "Use UTC", body: "x", why: "logs" } as const;
+
+  test.each(["rule", "preference"])("is kept on a %s", (kind) => {
+    const result = parseContent({ ...rule, kind, howToApply: "  In log code  " });
+
+    expect(result.ok && result.value.howToApply).toBe("In log code");
+  });
+
+  test("is kept on a gotcha", () => {
+    const result = parseContent({
+      ...fact,
+      kind: "gotcha",
+      triggers: { tools: ["bash"] },
+      howToApply: "Before deploying",
+    });
+
+    expect(result.ok && result.value.howToApply).toBe("Before deploying");
+  });
+
+  test.each(["fact", "decision", "reference"])("is refused on a %s", (kind) => {
+    expect(problems({ ...rule, kind, locator: "PAY-1", howToApply: "In log code" })).toEqual([
+      `${kind} cannot have howToApply (only rule, preference, gotcha)`,
+    ]);
+  });
+
+  test("must be a non-empty string", () => {
+    expect(problems({ ...rule, howToApply: " " })).toEqual([
+      "howToApply must be a non-empty string",
+    ]);
+  });
+
+  test("must be a single line", () => {
+    expect(problems({ ...rule, howToApply: "a\nb" })).toEqual(["howToApply must be a single line"]);
+  });
+
+  test("must stay within the length limit", () => {
+    expect(problems({ ...rule, howToApply: "x".repeat(MAX_HOW_TO_APPLY_LENGTH + 1) })).toEqual([
+      `howToApply must be at most ${MAX_HOW_TO_APPLY_LENGTH} characters`,
+    ]);
+  });
+
+  test("a stored fact with it still loads, without the field", () => {
+    const result = parseStoredContent({ ...fact, howToApply: "In log code" });
+
+    expect(outcome(result)).toEqual(fact);
+  });
+
+  test("a patch can add it to a rule", () => {
+    const base = validContent(rule);
+
+    const result = applyPatch(base, { howToApply: "In log code" });
+
+    expect(result.ok && result.value.howToApply).toBe("In log code");
+  });
+
+  test("a patch cannot add it to a fact", () => {
+    const result = applyPatch(validContent(fact), { howToApply: "In log code" });
+
+    expect(result.ok ? [] : result.error).toEqual([
+      "fact cannot have howToApply (only rule, preference, gotcha)",
+    ]);
+  });
+
+  test("a patch parses it like new content", () => {
+    expect(parsePatch({ howToApply: "" }).ok).toBe(false);
+  });
+});
 
 describe("parseContent", () => {
   test("accepts a fact with only kind, title and body", () => {

@@ -70,13 +70,13 @@ describe("memory_search when meaning is not available", () => {
 });
 
 describe("memory_search", () => {
-  test("lists a hit as a dash and the memory's one-line form", async () => {
+  test("lists a hit as a dash and the memory's one-line form with its updated date", async () => {
     const { search, saveAll } = searchTool();
     const backups = searchMemory(1, { title: "Backups", body: "Nightly backups run at 02:00." });
     saveAll([backups]);
 
     expect(await search({ query: "backups" })).toBe(
-      "- [01JB8Z6Q4R3M2N1P0V9W8X0001] fact · user · Backups",
+      "- [01JB8Z6Q4R3M2N1P0V9W8X0001] fact · user · Backups (2026-03-01)",
     );
   });
 

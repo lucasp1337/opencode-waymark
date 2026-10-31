@@ -1,12 +1,14 @@
-import type { MemoryContent } from "../../model/memory";
+import type { Memory } from "../../model/memory";
+import { appliesLines, datedTitle } from "../memory-line";
 
 // How a rule or preference appears in the session block. Budgets measure exactly this text.
-export function alwaysOnText(content: MemoryContent): string {
-  const body = content.body.trim();
+export function alwaysOnText(memory: Memory): string {
+  const body = memory.body.trim();
   const lines = [
-    `- ${content.title}`,
+    `- ${datedTitle(memory)}`,
     ...(body === "" ? [] : body.split("\n").map((line) => `  ${line}`)),
-    ...(content.why === undefined ? [] : [`  Why: ${content.why}`]),
+    ...(memory.why === undefined ? [] : [`  Why: ${memory.why}`]),
+    ...appliesLines(memory).map((line) => `  ${line}`),
   ];
   return lines.join("\n");
 }

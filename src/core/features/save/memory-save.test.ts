@@ -31,7 +31,9 @@ describe("memory_save", () => {
 
     const reply = await save(fx, { ...fact, scope: "user" });
 
-    expect(reply).toBe("Saved [01JB8Z6Q4R3M2N1P0V9W8X0001] fact · user · Staging resets nightly");
+    expect(reply).toBe(
+      "Saved [01JB8Z6Q4R3M2N1P0V9W8X0001] fact · user · Staging resets nightly (2026-03-01)",
+    );
     expect(memoryFiles(fx)).toEqual(["user/fact/01JB8Z6Q4R3M2N1P0V9W8X0001.md"]);
   });
 
@@ -147,7 +149,7 @@ describe("memory_save with related memories", () => {
 
     expect(reply).toStartWith("Not saved yet: related memories exist.");
     expect(reply).toContain(
-      "- [01JB8Z6Q4R3M2N1P0V9W8X0001] fact · repo:github.com/acme/api · Staging resets nightly",
+      "- [01JB8Z6Q4R3M2N1P0V9W8X0001] fact · repo:github.com/acme/api · Staging resets nightly (2026-03-01)",
     );
     expect(memoryFiles(fx)).toHaveLength(1);
   });
@@ -263,7 +265,7 @@ describe("memory_save kinds", () => {
     });
 
     expect(reply).toBe(
-      "Saved [01JB8Z6Q4R3M2N1P0V9W8X0001] reference · org:github.com/acme · Deploy runbook → https://wiki.example.com/deploy",
+      "Saved [01JB8Z6Q4R3M2N1P0V9W8X0001] reference · org:github.com/acme · Deploy runbook (2026-03-01) → https://wiki.example.com/deploy",
     );
   });
 
@@ -307,6 +309,32 @@ describe("memory_save kinds", () => {
   });
 });
 
+describe("memory_save howToApply", () => {
+  const rule = { kind: "rule", scope: "repo", title: "Use UTC", body: "b", why: "logs" };
+
+  test("a rule keeps it in its file", async () => {
+    const fx = fixture();
+
+    await save(fx, { ...rule, howToApply: "In log code" });
+
+    const read = await fx.host.callTool(
+      "memory_read",
+      { id: "01JB8Z6Q4R3M2N1P0V9W8X0001" },
+      SESSION,
+    );
+    expect(read).toContain("howToApply: In log code");
+  });
+
+  test("a fact is refused with a clear error and nothing is written", async () => {
+    const fx = fixture();
+
+    const reply = await save(fx, { ...fact, scope: "repo", howToApply: "In log code" });
+
+    expect(reply).toContain("fact cannot have howToApply (only rule, preference, gotcha)");
+    expect(memoryFiles(fx)).toEqual([]);
+  });
+});
+
 describe("memory_save budget", () => {
   const rule = (title: string, body: string) => ({
     kind: "rule",
@@ -324,10 +352,10 @@ describe("memory_save budget", () => {
     const reply = await save(fx, rule("Another rule", "y".repeat(400)));
 
     expect(reply).toStartWith(
-      "Not saved: rule and preference memories in repo:github.com/acme/api are capped at 600 tokens; 506 are used and the memory needs 107.",
+      "Not saved: rule and preference memories in repo:github.com/acme/api are capped at 600 tokens; 509 are used and the memory needs 110.",
     );
     expect(reply).toContain(
-      "- [01JB8Z6Q4R3M2N1P0V9W8X0001] rule · repo:github.com/acme/api · Long rule (506 tokens)",
+      "- [01JB8Z6Q4R3M2N1P0V9W8X0001] rule · repo:github.com/acme/api · Long rule (2026-03-01) (509 tokens)",
     );
     expect(
       existsSync(join(fx.dataDir, "repos/github.com/acme/api/rule/01JB8Z6Q4R3M2N1P0V9W8X0002.md")),

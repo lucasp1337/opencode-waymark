@@ -13,7 +13,7 @@ async function update(deps: ToolDeps, input: unknown): Promise<string> {
   }
   const patch = parsePatch(input);
   if (patch.ok && Object.keys(patch.value).length === 0) {
-    return "Not updated: give at least one of title, body, why, triggers or locator.";
+    return "Not updated: give at least one of title, body, why, howToApply, triggers or locator.";
   }
   const content = patch.ok ? applyPatch(existing.value, patch.value) : patch;
   if (!content.ok) {
@@ -30,7 +30,8 @@ async function update(deps: ToolDeps, input: unknown): Promise<string> {
 export function memoryUpdateTool(deps: ToolDeps): ToolDef {
   return {
     name: "memory_update",
-    description: "Change fields of an existing memory by id. Fields left out stay as they are.",
+    description:
+      "Change fields of an existing memory by id, to correct or extend it. Fields left out stay as they are. Use this instead of saving a duplicate.",
     inputSchema: {
       type: "object",
       properties: { id: ID_PROPERTY, ...CONTENT_PROPERTIES },

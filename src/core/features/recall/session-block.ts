@@ -3,6 +3,7 @@ import { isAlwaysOn, KINDS, type Kind } from "../../model/kind";
 import type { Memory } from "../../model/memory";
 import { type ScopeChain, scopeKey } from "../../model/scope";
 import { type IndexUsage, visibleIndex } from "../lifecycle/index-exit";
+import { appliesLines, datedTitle } from "../memory-line";
 import { alwaysOnText } from "./always-on";
 import { INSTRUCTIONS } from "./instructions";
 
@@ -14,8 +15,13 @@ interface BlockInput {
   readonly usage: IndexUsage;
 }
 
+// appliesLines matters only to the fresh-memories index, where a gotcha can carry howToApply.
 export function indexLine(memory: Memory): string {
-  return `- [${memory.id}] ${memory.title}`;
+  const lines = [
+    `- [${memory.id}] ${datedTitle(memory)}`,
+    ...appliesLines(memory).map((line) => `  ${line}`),
+  ];
+  return lines.join("\n");
 }
 
 // Broadest scope first, so the narrowest, which wins a conflict, is read last.

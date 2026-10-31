@@ -8,6 +8,7 @@ import type { MemoryStore } from "../../store/memory-store";
 import type { Telemetry } from "../../telemetry/telemetry";
 import type { NoisyThresholds } from "../lifecycle/lifecycle-settings";
 import { noisyGotchaLine } from "../lifecycle/noisy-gotcha";
+import { appliesLines, datedTitle } from "../memory-line";
 import {
   type Baseline,
   createFreshQueue,
@@ -97,7 +98,11 @@ function createChainMemories(store: JitDeps["store"]) {
 }
 
 function jitText(memory: Memory): string {
-  return `waymark · ${memory.kind} · ${memory.title}\n${memory.body}`;
+  return [
+    `waymark · ${memory.kind} · ${datedTitle(memory)}`,
+    ...appliesLines(memory),
+    memory.body,
+  ].join("\n");
 }
 
 type DeliveryDeps = Pick<JitDeps, "counters" | "noisy">;

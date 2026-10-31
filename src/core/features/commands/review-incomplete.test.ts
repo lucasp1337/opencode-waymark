@@ -31,7 +31,7 @@ describe("memory_command review of incomplete memories", () => {
     const report = await fx.run("review");
 
     expect(report).toContain(
-      `Missing a required field, fix with memory_update:\n- [${idNumber(1)}] reference · repo:github.com/acme/api · Runbook (missing locator)`,
+      `Missing a required field, fix with memory_update:\n- [${idNumber(1)}] reference · repo:github.com/acme/api · Runbook (2026-03-01) (missing locator)`,
     );
   });
 

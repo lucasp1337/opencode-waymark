@@ -37,7 +37,7 @@ describe("commands", () => {
     const listed = await fx.host.callTool("memory_command", { args: "" }, SESSION);
 
     expect(listed).toContain(
-      `[${FIRST_ID}] fact · repo:github.com/acme/api · Staging resets nightly`,
+      `[${FIRST_ID}] fact · repo:github.com/acme/api · Staging resets nightly (2026-03-01)`,
     );
   });
 
@@ -49,7 +49,7 @@ describe("commands", () => {
     const review = await fx.host.callTool("memory_command", { args: "review" }, SESSION);
 
     expect(review).toContain(
-      `Left the session index, still searchable:\n- [${FIRST_ID}] fact · repo:github.com/acme/api · Staging resets nightly`,
+      `Left the session index, still searchable:\n- [${FIRST_ID}] fact · repo:github.com/acme/api · Staging resets nightly (2026-03-01)`,
     );
   });
 
@@ -96,7 +96,7 @@ describe("commands through the runtime", () => {
     const review = await fx.host.callTool("memory_command", { args: "review" }, SESSION);
 
     expect(review).toContain(
-      `Gotchas that fire often:\n- [${FIRST_ID}] gotcha · repo:github.com/acme/api · Deploys need the VPN`,
+      `Gotchas that fire often:\n- [${FIRST_ID}] gotcha · repo:github.com/acme/api · Deploys need the VPN (2026-03-01)`,
     );
   });
 
@@ -110,7 +110,7 @@ describe("commands through the runtime", () => {
       SESSION,
     );
 
-    expect(reply).toBe(`Moved [${FIRST_ID}] fact · user · Staging resets nightly`);
+    expect(reply).toBe(`Moved [${FIRST_ID}] fact · user · Staging resets nightly (2026-03-01)`);
     expect(existsSync(join(fx.dataDir, "user", "fact", `${FIRST_ID}.md`))).toBe(true);
   });
 

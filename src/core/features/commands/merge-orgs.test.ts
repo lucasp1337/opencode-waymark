@@ -172,13 +172,13 @@ describe("memory_command org merge", () => {
     const reply = await fx.run(MERGE);
 
     expect(reply).toStartWith(
-      "Not merged: rule and preference memories in org:github.com/acme are capped at 50 tokens; 46 are used and the memory needs 21.",
+      "Not merged: rule and preference memories in org:github.com/acme are capped at 50 tokens; 49 are used and the memory needs 25.",
     );
     expect(reply).toEndWith(
       [
-        `- [${idNumber(1)}] rule · org:github.com/acme · Sign commits (46 tokens)`,
+        `- [${idNumber(1)}] rule · org:github.com/acme · Sign commits (2026-03-01) (49 tokens)`,
         "Arriving:",
-        `- [${idNumber(2)}] rule · org:github.com/acme-labs · Use UTC (21 tokens)`,
+        `- [${idNumber(2)}] rule · org:github.com/acme-labs · Use UTC (2026-03-01) (25 tokens)`,
       ].join("\n"),
     );
     expect(fx.store.inScopes([LABS_ORG])).toHaveLength(1);
@@ -199,8 +199,12 @@ describe("memory_command org merge", () => {
     const reply = await fx.run(MERGE);
 
     expect(reply).toStartWith("Not merged: rule and preference memories");
-    expect(reply).toContain(`- [${idNumber(1)}] rule · org:github.com/acme-labs · Rule 1`);
-    expect(reply).toContain(`- [${idNumber(2)}] rule · org:github.com/acme-labs · Rule 2`);
+    expect(reply).toContain(
+      `- [${idNumber(1)}] rule · org:github.com/acme-labs · Rule 1 (2026-03-01)`,
+    );
+    expect(reply).toContain(
+      `- [${idNumber(2)}] rule · org:github.com/acme-labs · Rule 2 (2026-03-01)`,
+    );
     expect(fx.store.inScopes([LABS_ORG])).toHaveLength(2);
   });
 
@@ -209,7 +213,7 @@ describe("memory_command org merge", () => {
     fx.seed({
       n: 1,
       scope: ACME_ORG,
-      content: { kind: "rule", title: "Sign commits", body: "x".repeat(150), why: "policy" },
+      content: { kind: "rule", title: "Sign commits", body: "x".repeat(120), why: "policy" },
     });
     fx.seed({
       n: 2,

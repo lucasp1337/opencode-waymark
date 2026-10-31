@@ -203,6 +203,39 @@ describe("decodeMemory round trip", () => {
   });
 });
 
+describe("decodeMemory howToApply", () => {
+  const rule = memoryOf({
+    kind: "rule",
+    title: "Use UTC",
+    body: "x",
+    why: "logs",
+    howToApply: "In log code",
+  });
+
+  test("writes howToApply after why", () => {
+    expect(encodeMemory(rule)).toContain("why: logs\nhowToApply: In log code\ncreated:");
+  });
+
+  test("reads howToApply back", () => {
+    const decoded = decodeMemory(encodeMemory(rule));
+
+    expect(decoded.ok && decoded.value.howToApply).toBe("In log code");
+  });
+
+  test("omits the key when the memory has none", () => {
+    expect(encodeMemory(fact)).not.toContain("howToApply");
+  });
+
+  test("loads a file whose kind cannot carry it, without the field", () => {
+    const text = encodeMemory(fact).replace("created:", "howToApply: x\ncreated:");
+
+    const decoded = decodeMemory(text);
+
+    expect(decoded.ok && decoded.value.title).toBe("Staging resets nightly");
+    expect(decoded.ok && decoded.value.howToApply).toBeUndefined();
+  });
+});
+
 describe("decodeMemory references", () => {
   const reference = memoryOf({ kind: "reference", title: "Runbook", body: "x", locator: "PAY-1" });
 

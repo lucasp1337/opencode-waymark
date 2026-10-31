@@ -34,7 +34,9 @@ describe("session block", () => {
     const [next] = await fx.host.emitSystem("ses_next");
 
     expect(current).toBe(INSTRUCTIONS);
-    expect(next).toContain("- Run the linter before committing\n  Why: CI rejects lint errors");
+    expect(next).toContain(
+      "- Run the linter before committing (2026-03-01)\n  Why: CI rejects lint errors",
+    );
   });
 
   test("a subagent session gets nothing by default", async () => {
@@ -88,7 +90,7 @@ describe("just-in-time recall", () => {
     fx.host.sessions.set("ses_next", { id: "ses_next", directory: "/work/api" });
 
     expect(await fx.host.emitToolAfter(bashCall("ses_next"))).toEqual([
-      "waymark · gotcha · Deploys need the VPN\nConnect the VPN first or the upload hangs.",
+      "waymark · gotcha · Deploys need the VPN (2026-03-01)\nConnect the VPN first or the upload hangs.",
     ]);
   });
 
@@ -305,6 +307,18 @@ describe("a save while the model is still loading", () => {
     loads[1]?.resolve(model);
 
     expect(await saving).toStartWith("Not saved yet: related memories exist.");
+  });
+
+  test("embeds the content only, without the date shown to the agent", async () => {
+    const { fx, loads } = await restartedWithEnglishSaved();
+
+    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    loads[1]?.resolve(model);
+    await saving;
+
+    const embedded = model.calls.flat();
+    expect(embedded).toContain(`${slovak.title}\n${slovak.body}`);
+    expect(embedded).toContain(`${english.title}\n${english.body}`);
   });
 
   test("saves after the bound elapses without a model", async () => {

@@ -12,7 +12,8 @@ interface ReadDeps extends Pick<ToolDeps, "store"> {
 export function memoryReadTool(deps: ReadDeps): ToolDef {
   return {
     name: "memory_read",
-    description: "Read one memory in full by id.",
+    description:
+      "Read one memory in full by id, including its dates. Check a memory before relying on it or updating it.",
     inputSchema: { type: "object", properties: { id: ID_PROPERTY }, required: ["id"] },
     execute: (input) => {
       const memory = lookupMemory(deps.store, input);

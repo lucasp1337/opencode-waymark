@@ -87,7 +87,7 @@ export function memorySearchTool(deps: SearchDeps): ToolDef {
   return {
     name: "memory_search",
     description:
-      "Search saved memories of this session's scopes. Matches words, and meaning across languages once the local model has loaded. Returns the best matches; read one in full with memory_read.",
+      "Search saved memories of this session's scopes. Matches words, and meaning across languages once the local model has loaded. Returns the best matches; read one in full with memory_read. Results can be stale; verify named files or commands before relying on them.",
     inputSchema: INPUT_SCHEMA,
     execute: (input, ctx) => search(deps, input, ctx.sessionID),
   };

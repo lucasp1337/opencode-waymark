@@ -17,6 +17,7 @@ export interface MemoryContent {
   readonly title: string;
   readonly body: string;
   readonly why?: string;
+  readonly howToApply?: string;
   readonly triggers?: Triggers;
   // Only references carry one. Files from before locators existed may lack it.
   readonly locator?: Locator;

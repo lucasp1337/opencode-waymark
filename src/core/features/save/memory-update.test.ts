@@ -33,11 +33,32 @@ describe("memory_update", () => {
 
     const reply = await update(fx, { id: ID, body: "All timestamps in UTC." });
 
-    expect(reply).toBe(`Updated [${ID}] rule · repo:github.com/acme/api · Use UTC`);
+    expect(reply).toBe(`Updated [${ID}] rule · repo:github.com/acme/api · Use UTC (2026-03-01)`);
     const text = await read(fx);
     expect(text).toContain("why: logs");
     expect(text).toContain("updated: 2026-03-01T10:00:05.000Z");
     expect(text).toEndWith("All timestamps in UTC.");
+  });
+
+  test("adds howToApply to a rule", async () => {
+    const fx = await withRule();
+
+    await update(fx, { id: ID, howToApply: "In log code" });
+
+    expect(await read(fx)).toContain("howToApply: In log code");
+  });
+
+  test("refuses howToApply on a fact", async () => {
+    const fx = runtime();
+    await fx.host.callTool(
+      "memory_save",
+      { kind: "fact", scope: "repo", title: "Staging resets", body: "b" },
+      SESSION,
+    );
+
+    const reply = await update(fx, { id: ID, howToApply: "In log code" });
+
+    expect(reply).toBe("Not updated: fact cannot have howToApply (only rule, preference, gotcha)");
   });
 
   test("toasts the updated kind and scope", async () => {

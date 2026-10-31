@@ -1,8 +1,27 @@
 {
   "name": "opencode-waymark",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Persistent, local-only memory for opencode agents.",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "memory",
+    "agent",
+    "local-first"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasp1337/opencode-waymark.git"
+  },
+  "homepage": "https://github.com/lucasp1337/opencode-waymark#readme",
   "type": "module",
+  "main": "./src/index.ts",
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "docs/commands.md"
+  ],
   "engines": {
     "opencode": "1.19.4"
   },

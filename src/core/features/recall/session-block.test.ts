@@ -5,7 +5,7 @@ import { type Memory, newMemory } from "../../model/memory";
 import type { ScopeChain, ScopeRef } from "../../model/scope";
 import type { IndexUsage } from "../lifecycle/index-exit";
 import { INSTRUCTIONS } from "./instructions";
-import { renderSessionBlock } from "./session-block";
+import { indexLine, renderSessionBlock } from "./session-block";
 
 const USER: ScopeRef = { level: "user" };
 const REPO: ScopeRef = { level: "repo", id: "github.com/acme/api" };
@@ -66,7 +66,51 @@ describe("renderSessionBlock", () => {
       ),
     ]);
 
-    expect(text).toContain("### Rules\n#### user\n- Use UTC\n  Timestamps in UTC.\n  Why: logs");
+    expect(text).toContain(
+      "### Rules\n#### user\n- Use UTC (2026-03-01)\n  Timestamps in UTC.\n  Why: logs",
+    );
+  });
+
+  test("shows when a rule applies under its reason", () => {
+    const text = render([
+      memory(
+        { kind: "rule", title: "Use UTC", body: "", why: "logs", howToApply: "In log code" },
+        { n: 4, scope: USER },
+      ),
+    ]);
+
+    expect(text).toContain("  Why: logs\n  Applies: In log code");
+  });
+
+  test("shows when a fresh gotcha index entry applies on its own line", () => {
+    const entry = memory(
+      {
+        kind: "gotcha",
+        title: "Slow",
+        body: "b",
+        triggers: { tools: ["bash"] },
+        howToApply: "On CI",
+      },
+      { n: 4, scope: USER },
+    );
+
+    expect(indexLine(entry)).toBe(`- [${entry.id}] Slow (2026-03-01)\n  Applies: On CI`);
+  });
+
+  test("dates a rule by its last update", () => {
+    const text = render([
+      memory(
+        { kind: "rule", title: "Use UTC", body: "", why: "logs" },
+        { n: 4, scope: USER, updated: "2026-01-15T23:59:59.000Z" },
+      ),
+    ]);
+
+    expect(text).toContain("- Use UTC (2026-01-15)");
+  });
+
+  test("tells the agent memories are dated and to check what they name", () => {
+    expect(INSTRUCTIONS).toContain("Memories are dated");
+    expect(INSTRUCTIONS).toContain("file, flag or command");
   });
 
   test("groups by scope with the narrowest scope last", () => {
@@ -85,7 +129,7 @@ describe("renderSessionBlock", () => {
     );
 
     expect(render([fact])).toContain(
-      `#### repo:github.com/acme/api\n- [${fact.id}] Postgres over Mongo`,
+      `#### repo:github.com/acme/api\n- [${fact.id}] Postgres over Mongo (2026-03-01)`,
     );
   });
 

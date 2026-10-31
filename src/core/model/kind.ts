@@ -14,6 +14,11 @@ export const KIND_REQUIREMENTS: { readonly [K in Kind]: readonly Requirement[] }
   reference: ["locator"],
 };
 
+// Kinds that may say when or where they apply; for the others the field is refused.
+export const HOW_TO_APPLY_KINDS: readonly Kind[] = ["rule", "preference", "gotcha"];
+
+export const MAX_HOW_TO_APPLY_LENGTH = 200;
+
 export type Delivery = "always" | "index" | "jit" | "search";
 
 // How each kind reaches the agent.

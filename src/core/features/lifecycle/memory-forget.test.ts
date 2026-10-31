@@ -26,7 +26,7 @@ describe("memory_forget", () => {
 
     const reply = await fx.host.callTool("memory_forget", { id: ID }, SESSION);
 
-    expect(reply).toBe(`Forgot [${ID}] fact · user · Staging resets nightly`);
+    expect(reply).toBe(`Forgot [${ID}] fact · user · Staging resets nightly (2026-03-01)`);
     expect(existsSync(join(fx.dataDir, "user", "fact", `${ID}.md`))).toBe(false);
     expect(await fx.host.callTool("memory_read", { id: ID }, SESSION)).toBe(
       `no memory with id ${ID}`,

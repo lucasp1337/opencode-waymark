@@ -29,7 +29,7 @@ const INPUT_SCHEMA: JsonSchemaObject = {
     relation: {
       type: "string",
       description:
-        'Only after related memories were shown: "new", "updates:<id>" or "supersedes:<id>"',
+        'Only after related memories were shown. "updates:<id>": edit that memory in place. "supersedes:<id>": replace it; the old one is kept but no longer active. "new": unrelated to all shown.',
     },
   },
   required: ["kind", "scope", "title", "body"],
@@ -125,7 +125,7 @@ export function memorySaveTool(deps: ToolDeps): ToolDef {
   return {
     name: "memory_save",
     description:
-      "Save a memory for future sessions. If related memories exist they are returned and nothing is saved; call again with relation.",
+      "Save a memory for future sessions. Include the why. If related memories exist they are returned and nothing is saved; read them, then call again with relation (prefer updating one).",
     inputSchema: INPUT_SCHEMA,
     execute: (input, ctx) => save(deps, input, ctx.sessionID),
   };

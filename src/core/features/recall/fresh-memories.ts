@@ -49,7 +49,7 @@ export function queueFresh(
 
 function freshText(memory: Memory): string {
   return isAlwaysOn(memory.kind)
-    ? `waymark · new ${memory.kind} · ${memory.title}\n${alwaysOnText(memory)}`
+    ? `waymark · new ${memory.kind}\n${alwaysOnText(memory)}`
     : `waymark · new ${memory.kind} (memory_read for the full text)\n${indexLine(memory)}`;
 }
 

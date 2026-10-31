@@ -1,5 +1,5 @@
 import { isAlwaysOn } from "../../model/kind";
-import type { Memory, MemoryContent } from "../../model/memory";
+import type { Memory } from "../../model/memory";
 import { err, ok, type Result } from "../../model/result";
 import { type ScopeLevel, scopeKey } from "../../model/scope";
 import { alwaysOnText } from "../recall/always-on";
@@ -9,8 +9,8 @@ export type BudgetCaps = { readonly [L in ScopeLevel]: number };
 const CHARS_PER_TOKEN = 4;
 
 // Measured on the text the session block shows, so the cap bounds what the agent reads.
-export function tokensOf(content: MemoryContent): number {
-  return Math.ceil(alwaysOnText(content).length / CHARS_PER_TOKEN);
+export function tokensOf(memory: Memory): number {
+  return Math.ceil(alwaysOnText(memory).length / CHARS_PER_TOKEN);
 }
 
 export interface BudgetRefusal {

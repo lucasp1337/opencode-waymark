@@ -1,4 +1,12 @@
-import { isKind, KIND_REQUIREMENTS, KINDS, kindsRequiring, type Requirement } from "./kind";
+import {
+  HOW_TO_APPLY_KINDS,
+  isKind,
+  KIND_REQUIREMENTS,
+  KINDS,
+  kindsRequiring,
+  MAX_HOW_TO_APPLY_LENGTH,
+  type Requirement,
+} from "./kind";
 import { type Locator, parseLocator } from "./locator";
 import {
   type MemoryContent,
@@ -12,7 +20,7 @@ import { err, ok, type Result } from "./result";
 import { isWord } from "./words";
 
 export type ContentPatch = Partial<
-  Pick<MemoryContent, "title" | "body" | "why" | "triggers" | "locator">
+  Pick<MemoryContent, "title" | "body" | "why" | "howToApply" | "triggers" | "locator">
 >;
 
 type FieldResult<T> = Result<T, string>;
@@ -39,6 +47,19 @@ function parseWhy(value: unknown): FieldResult<string> {
   return typeof value === "string" && value.trim() !== ""
     ? ok(value.trim())
     : err("why must be a non-empty string");
+}
+
+function parseHowToApply(value: unknown): FieldResult<string> {
+  if (typeof value !== "string" || value.trim() === "") {
+    return err("howToApply must be a non-empty string");
+  }
+  const trimmed = value.trim();
+  if (LINE_BREAK.test(trimmed)) {
+    return err("howToApply must be a single line");
+  }
+  return trimmed.length <= MAX_HOW_TO_APPLY_LENGTH
+    ? ok(trimmed)
+    : err(`howToApply must be at most ${MAX_HOW_TO_APPLY_LENGTH} characters`);
 }
 
 // Which entries each trigger list accepts; keywords and tools are matched as single tokens.
@@ -117,6 +138,21 @@ function withoutStrayLocator(content: MemoryContent): MemoryContent {
   return rest;
 }
 
+// Files on disk keep loading when the field sits on a kind that refuses it.
+function withoutStrayHowToApply(content: MemoryContent): MemoryContent {
+  if (content.howToApply === undefined || HOW_TO_APPLY_KINDS.includes(content.kind)) {
+    return content;
+  }
+  const { howToApply: _stray, ...rest } = content;
+  return rest;
+}
+
+function misplacedHowToApply(content: MemoryContent): string[] {
+  return content.howToApply === undefined || HOW_TO_APPLY_KINDS.includes(content.kind)
+    ? []
+    : [`${content.kind} cannot have howToApply (only ${HOW_TO_APPLY_KINDS.join(", ")})`];
+}
+
 function isValidContent(
   content: MemoryContent,
   tolerated: readonly Requirement[],
@@ -129,12 +165,13 @@ function validated(
   tolerated: readonly Requirement[],
 ): Result<ValidContent, string[]> {
   const content = withoutStrayLocator(input);
-  if (isValidContent(content, tolerated)) {
-    return ok(content);
-  }
-  return err(
-    unmetExcept(content, tolerated).map((name) => `${content.kind} ${REQUIREMENTS[name].problem}`),
-  );
+  const problems = [
+    ...unmetExcept(content, tolerated).map(
+      (name) => `${content.kind} ${REQUIREMENTS[name].problem}`,
+    ),
+    ...misplacedHowToApply(content),
+  ];
+  return isValidContent(content, tolerated) && problems.length === 0 ? ok(content) : err(problems);
 }
 
 function problemsOf(results: Array<FieldResult<unknown> | undefined>): string[] {
@@ -158,6 +195,7 @@ interface PatchResults {
   readonly title?: FieldResult<string> | undefined;
   readonly body?: FieldResult<string> | undefined;
   readonly why?: FieldResult<string> | undefined;
+  readonly howToApply?: FieldResult<string> | undefined;
   readonly triggers?: FieldResult<Triggers> | undefined;
   readonly locator?: FieldResult<Locator> | undefined;
 }
@@ -166,12 +204,14 @@ function patchOf(results: PatchResults): ContentPatch {
   const title = parsedValue(results.title);
   const body = parsedValue(results.body);
   const why = parsedValue(results.why);
+  const howToApply = parsedValue(results.howToApply);
   const triggers = parsedValue(results.triggers);
   const locator = parsedValue(results.locator);
   return {
     ...(title === undefined ? {} : { title }),
     ...(body === undefined ? {} : { body }),
     ...(why === undefined ? {} : { why }),
+    ...(howToApply === undefined ? {} : { howToApply }),
     ...(triggers === undefined ? {} : { triggers }),
     ...(locator === undefined ? {} : { locator }),
   };
@@ -188,6 +228,7 @@ export function parsePatch(input: unknown): Result<ContentPatch, string[]> {
     title: parseIfPresent(input, "title", parseTitle),
     body: parseIfPresent(input, "body", parseBody),
     why: parseIfPresent(input, "why", parseWhy),
+    howToApply: parseIfPresent(input, "howToApply", parseHowToApply),
     triggers: parseIfPresent(input, "triggers", parseTriggers),
     locator: parseIfPresent(input, "locator", parseLocator),
   };
@@ -204,6 +245,7 @@ function parseFields(input: unknown): Result<MemoryContent, string[]> {
   const body = parseBody(ownField(input, "body"));
   const optional = {
     why: parseIfPresent(input, "why", parseWhy),
+    howToApply: parseIfPresent(input, "howToApply", parseHowToApply),
     triggers: parseIfPresent(input, "triggers", parseTriggers),
     locator: parseIfPresent(input, "locator", parseLocator),
   };
@@ -217,21 +259,15 @@ function parseFields(input: unknown): Result<MemoryContent, string[]> {
   return ok({ ...patchOf(optional), kind, title: title.value, body: body.value });
 }
 
-function parseWith(
-  input: unknown,
-  tolerated: readonly Requirement[],
-): Result<ValidContent, string[]> {
-  const fields = parseFields(input);
-  return fields.ok ? validated(fields.value, tolerated) : fields;
-}
-
 export function parseContent(input: unknown): Result<ValidContent, string[]> {
-  return parseWith(input, []);
+  const fields = parseFields(input);
+  return fields.ok ? validated(fields.value, []) : fields;
 }
 
 // For files on disk: a reference saved before locators existed still loads.
 export function parseStoredContent(input: unknown): Result<ValidContent, string[]> {
-  return parseWith(input, LEGACY_TOLERATED);
+  const fields = parseFields(input);
+  return fields.ok ? validated(withoutStrayHowToApply(fields.value), LEGACY_TOLERATED) : fields;
 }
 
 export function applyPatch(

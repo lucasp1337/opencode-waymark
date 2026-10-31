@@ -155,8 +155,9 @@ const releaseGotcha: SavedGotcha = {
   triggers: { commands: ["make release"] },
 };
 
-const DEPLOY_TEXT = "waymark · gotcha · Deploys need the VPN\nConnect the VPN first.";
-const RELEASE_TEXT = "waymark · gotcha · Releases need a tag\nTag the commit before building.";
+const DEPLOY_TEXT = "waymark · gotcha · Deploys need the VPN (2026-03-01)\nConnect the VPN first.";
+const RELEASE_TEXT =
+  "waymark · gotcha · Releases need a tag (2026-03-01)\nTag the commit before building.";
 
 function run(sessionID: string, command: string) {
   return {

@@ -128,7 +128,7 @@ describe("JIT delivery", () => {
     const { jit } = jitWith([ON_BASH]);
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      "waymark · gotcha · Pushes are protected\nBody of Pushes are protected.",
+      "waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.",
     );
   });
 
@@ -138,12 +138,28 @@ describe("JIT delivery", () => {
     expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBeNull();
   });
 
+  test("shows when a gotcha applies under its header", async () => {
+    const { jit } = jitWith([
+      stored(1, {
+        kind: "gotcha",
+        title: "Pushes are protected",
+        body: "Open a PR.",
+        triggers: { tools: ["bash"] },
+        howToApply: "On main",
+      }),
+    ]);
+
+    expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
+      "waymark · gotcha · Pushes are protected (2026-03-01)\nApplies: On main\nOpen a PR.",
+    );
+  });
+
   test("joins several matches with a blank line", async () => {
     const { jit } = jitWith([ON_BASH, gotcha(3, "Shell is slow", { tools: ["bash"] })]);
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      "waymark · gotcha · Pushes are protected\nBody of Pushes are protected.\n\n" +
-        "waymark · gotcha · Shell is slow\nBody of Shell is slow.",
+      "waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.\n\n" +
+        "waymark · gotcha · Shell is slow (2026-03-01)\nBody of Shell is slow.",
     );
   });
 
@@ -169,7 +185,7 @@ describe("JIT delivery", () => {
     await jit.onToolAfter(toolCall({ tool: "bash" }));
 
     expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBe(
-      "waymark · gotcha · Reads are slow\nBody of Reads are slow.",
+      "waymark · gotcha · Reads are slow (2026-03-01)\nBody of Reads are slow.",
     );
   });
 
@@ -234,7 +250,7 @@ describe("JIT candidates", () => {
     const { jit } = jitWith([fact]);
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      "waymark · fact · Staging resets nightly\nAt 02:00.",
+      "waymark · fact · Staging resets nightly (2026-03-01)\nAt 02:00.",
     );
   });
 
@@ -279,7 +295,7 @@ describe("JIT candidates", () => {
     const { jit } = jitWith([ON_BASH, newer]);
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      "waymark · gotcha · Pushes are protected now\nNew.",
+      "waymark · gotcha · Pushes are protected now (2026-03-01)\nNew.",
     );
   });
 
@@ -346,7 +362,7 @@ describe("JIT when the output cannot be appended", () => {
     await jit.onToolAfter(toolCall({ tool: "bash", appendable: false }));
 
     expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBe(
-      "waymark · gotcha · Pushes are protected\nBody of Pushes are protected.",
+      "waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.",
     );
   });
 
@@ -374,8 +390,8 @@ describe("JIT when the output cannot be appended", () => {
     await jit.onToolAfter(toolCall({ tool: "read", appendable: false }));
 
     expect(await jit.onToolAfter(toolCall({ tool: "write" }))).toBe(
-      "waymark · gotcha · Pushes are protected\nBody of Pushes are protected.\n\n" +
-        "waymark · gotcha · Reads are slow\nBody of Reads are slow.",
+      "waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.\n\n" +
+        "waymark · gotcha · Reads are slow (2026-03-01)\nBody of Reads are slow.",
     );
   });
 
@@ -384,8 +400,8 @@ describe("JIT when the output cannot be appended", () => {
     await jit.onToolAfter(toolCall({ tool: "bash", appendable: false }));
 
     expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBe(
-      "waymark · gotcha · Pushes are protected\nBody of Pushes are protected.\n\n" +
-        "waymark · gotcha · Reads are slow\nBody of Reads are slow.",
+      "waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.\n\n" +
+        "waymark · gotcha · Reads are slow (2026-03-01)\nBody of Reads are slow.",
     );
   });
 
@@ -524,7 +540,7 @@ describe("JIT noisy gotcha check", () => {
     const { jit } = jitWith([ON_BASH], { firesBefore: 9 });
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      "waymark · gotcha · Pushes are protected\nBody of Pushes are protected.",
+      "waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.",
     );
   });
 
@@ -532,7 +548,7 @@ describe("JIT noisy gotcha check", () => {
     const { jit } = jitWith([ON_BASH], { firesBefore: 10 });
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      `waymark · gotcha · Pushes are protected\nBody of Pushes are protected.\n${noisyLine(10, id(1))}`,
+      `waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.\n${noisyLine(10, id(1))}`,
     );
   });
 
@@ -551,7 +567,7 @@ describe("JIT noisy gotcha check", () => {
     const later = await jit.onToolAfter(toolCall({ tool: "read" }));
 
     expect(text).toContain(noisyLine(12, id(1)));
-    expect(later).toBe("waymark · gotcha · Reads are slow\nBody of Reads are slow.");
+    expect(later).toBe("waymark · gotcha · Reads are slow (2026-03-01)\nBody of Reads are slow.");
   });
 
   test("puts the line on the first of two noisy gotchas delivered together", async () => {
@@ -560,8 +576,8 @@ describe("JIT noisy gotcha check", () => {
     });
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      `waymark · gotcha · Pushes are protected\nBody of Pushes are protected.\n${noisyLine(10, id(1))}` +
-        "\n\nwaymark · gotcha · Shell is slow\nBody of Shell is slow.",
+      `waymark · gotcha · Pushes are protected (2026-03-01)\nBody of Pushes are protected.\n${noisyLine(10, id(1))}` +
+        "\n\nwaymark · gotcha · Shell is slow (2026-03-01)\nBody of Shell is slow.",
     );
   });
 
@@ -584,7 +600,7 @@ describe("JIT noisy gotcha check", () => {
     const { jit } = jitWith([fact], { firesBefore: 50 });
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toBe(
-      "waymark · fact · Staging resets nightly\nAt 02:00.",
+      "waymark · fact · Staging resets nightly (2026-03-01)\nAt 02:00.",
     );
   });
 
@@ -626,7 +642,7 @@ describe("JIT memories saved after the session block was frozen", () => {
     saveMidSession(fx, memories, rule);
     const first = await fx.jit.onToolAfter(toolCall());
 
-    expect(first).toBe("waymark · new rule · No force push\n- No force push\n  Why: History.");
+    expect(first).toBe("waymark · new rule\n- No force push (2026-03-01)\n  Why: History.");
     expect(await fx.jit.onToolAfter(toolCall())).toBeNull();
   });
 
@@ -637,7 +653,7 @@ describe("JIT memories saved after the session block was frozen", () => {
     saveMidSession(fx, memories, stored(12, { kind: "fact", title: "Cache is Redis", body: "b" }));
 
     expect(await fx.jit.onToolAfter(toolCall())).toBe(
-      `waymark · new fact (memory_read for the full text)\n- [${id(12)}] Cache is Redis`,
+      `waymark · new fact (memory_read for the full text)\n- [${id(12)}] Cache is Redis (2026-03-01)`,
     );
   });
 

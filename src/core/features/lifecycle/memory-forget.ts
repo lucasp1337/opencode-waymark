@@ -23,7 +23,7 @@ export function memoryForgetTool(deps: ToolDeps): ToolDef {
   return {
     name: "memory_forget",
     description:
-      "Delete a memory file for good. Only when the user asks to forget it or it is plainly wrong.",
+      "Delete a memory file for good. Only when the user says it is wrong or unwanted, or you proved it stale and updating cannot fix it. Tell the user what you forgot.",
     inputSchema: { type: "object", properties: { id: ID_PROPERTY }, required: ["id"] },
     execute: (input) => forget(deps, input),
   };

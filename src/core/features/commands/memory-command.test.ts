@@ -48,18 +48,18 @@ describe("memory_command with no arguments", () => {
       [
         "## user (1)",
         "preference (1)",
-        `- [${ID_1}] preference · user · Reply briefly`,
+        `- [${ID_1}] preference · user · Reply briefly (2026-03-01)`,
         "",
         "## org:github.com/acme (1)",
         "rule (1)",
-        `- [${ID_2}] rule · org:github.com/acme · Sign commits`,
+        `- [${ID_2}] rule · org:github.com/acme · Sign commits (2026-03-01)`,
         "",
         "## repo:github.com/acme/api (3)",
         "fact (2)",
-        `- [${ID_3}] fact · repo:github.com/acme/api · Staging resets`,
-        `- [${idNumber(4)}] fact · repo:github.com/acme/api · Deploy window`,
+        `- [${ID_3}] fact · repo:github.com/acme/api · Staging resets (2026-03-01)`,
+        `- [${idNumber(4)}] fact · repo:github.com/acme/api · Deploy window (2026-03-01)`,
         "gotcha (1)",
-        `- [${idNumber(5)}] gotcha · repo:github.com/acme/api · Flaky test`,
+        `- [${idNumber(5)}] gotcha · repo:github.com/acme/api · Flaky test (2026-03-01)`,
       ].join("\n"),
     );
   });
@@ -79,7 +79,7 @@ describe("memory_command with no arguments", () => {
     fx.seed({ n: 1, scope: USER, content: { kind: "fact", title: "Mine", body: "" } });
 
     expect(await fx.run("", NOTES_SESSION)).toBe(
-      ["## user (1)", "fact (1)", `- [${ID_1}] fact · user · Mine`].join("\n"),
+      ["## user (1)", "fact (1)", `- [${ID_1}] fact · user · Mine (2026-03-01)`].join("\n"),
     );
   });
 
@@ -184,7 +184,7 @@ describe("memory_command review", () => {
     const report = await fx.run("review");
 
     expect(report).toContain(
-      `Superseded, still on disk:\n- [${ID_1}] fact · repo:github.com/acme/api · Old (replaced by [${ID_2}])`,
+      `Superseded, still on disk:\n- [${ID_1}] fact · repo:github.com/acme/api · Old (2026-03-01) (replaced by [${ID_2}])`,
     );
     expect(report).not.toContain("· New");
   });
@@ -205,10 +205,10 @@ describe("memory_command review", () => {
     const report = await fx.run("review");
 
     expect(report).toContain(
-      `Left the session index, still searchable:\n- [${ID_1}] fact · repo:github.com/acme/api · Forgotten fact`,
+      `Left the session index, still searchable:\n- [${ID_1}] fact · repo:github.com/acme/api · Forgotten fact (2026-03-01)`,
     );
     expect(report).toContain(
-      `Gotchas that fire often:\n- [${ID_2}] gotcha · repo:github.com/acme/api · Noisy one`,
+      `Gotchas that fire often:\n- [${ID_2}] gotcha · repo:github.com/acme/api · Noisy one (2026-03-01)`,
     );
   });
 
@@ -252,7 +252,7 @@ describe("memory_command move", () => {
 
     const reply = await fx.run(`move ${ID_1} org`);
 
-    expect(reply).toBe(`Moved [${ID_1}] fact · org:github.com/acme · Staging resets`);
+    expect(reply).toBe(`Moved [${ID_1}] fact · org:github.com/acme · Staging resets (2026-03-02)`);
     const after = fx.store.get(ID_1);
     expect(after?.scope).toEqual(ACME_ORG);
     expect(after?.created).toBe(before.created);
@@ -310,7 +310,7 @@ describe("memory_command move", () => {
     fx.seed({ n: 1, scope: API_REPO, content: tinyFact });
 
     expect(await fx.run(`move ${ID_1} repo`)).toBe(
-      `Not moved: [${ID_1}] fact · repo:github.com/acme/api · Staging resets is already in repo:github.com/acme/api.`,
+      `Not moved: [${ID_1}] fact · repo:github.com/acme/api · Staging resets (2026-03-01) is already in repo:github.com/acme/api.`,
     );
     expect(fx.store.get(ID_1)?.updated).not.toBe(COMMAND_TIME.toISOString());
   });
@@ -342,9 +342,11 @@ describe("memory_command move", () => {
     const reply = await fx.run(`move ${ID_2} org`);
 
     expect(reply).toStartWith(
-      "Not moved: rule and preference memories in org:github.com/acme are capped at 50 tokens; 46 are used and the memory needs 21.",
+      "Not moved: rule and preference memories in org:github.com/acme are capped at 50 tokens; 49 are used and the memory needs 25.",
     );
-    expect(reply).toContain(`- [${ID_1}] rule · org:github.com/acme · Sign commits (46 tokens)`);
+    expect(reply).toContain(
+      `- [${ID_1}] rule · org:github.com/acme · Sign commits (2026-03-01) (49 tokens)`,
+    );
     expect(reply).toContain(
       "merge these memories, demote one to a fact, or raise the cap with memory_config",
     );
