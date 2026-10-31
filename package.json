@@ -33,7 +33,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@huggingface/transformers": "4.3.1",
+    "@huggingface/transformers": "4.3.2",
     "@opencode-ai/plugin": "1.19.4",
     "ulid": "3.0.2",
     "yaml": "2.9.1"
