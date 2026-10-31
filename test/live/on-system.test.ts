@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { at, liveEnvWithProbe, probeLines } from "./harness";
+import { runScripted } from "./scripted-provider";
 
 describe("onSystem", () => {
-  test("text returned by the handler is visible to the agent in its system prompt", async () => {
+  test("text returned by the handler is in the system prompt the model receives", async () => {
     const env = liveEnvWithProbe();
 
-    const result = await env.run("What is the project codeword? Reply with only the codeword.");
+    const provider = await runScripted(env, []);
 
-    expect(result.stdout).toContain("WAYMARK_SYSTEM_MARKER_7Q2");
+    const system = provider.requestBodies().filter((body) => body.includes('"role":"system"'));
+    expect(system.some((body) => body.includes("WAYMARK_SYSTEM_MARKER_7Q2"))).toBe(true);
   });
 
   test("the hook receives the session id of the request", async () => {
@@ -23,7 +25,7 @@ describe("onSystem", () => {
   test("the hook fires on every model request, so callers must cache per session", async () => {
     const env = liveEnvWithProbe();
 
-    await env.run("Call the probe_echo tool once with message hi. Then say DONE.");
+    await runScripted(env, [{ tool: "probe_echo", args: { message: "hi" } }]);
 
     expect(probeLines(env, "probe.system").length).toBeGreaterThanOrEqual(2);
   });

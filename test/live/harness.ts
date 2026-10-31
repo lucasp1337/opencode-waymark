@@ -87,7 +87,7 @@ export interface LiveEnv {
   dataHome: string;
   logFile: string;
   installPlugin(name: string, source: string): void;
-  run(prompt: string, extraArgs?: string[]): Promise<RunResult>;
+  run(prompt: string, extraArgs?: string[], model?: string): Promise<RunResult>;
   logLines(): LogLine[];
   serve(): Promise<ServerHandle>;
 }
@@ -95,7 +95,7 @@ export interface LiveEnv {
 export interface ServerHandle {
   api(path: string, init?: RequestInit): Promise<Response>;
   newSession(): Promise<string>;
-  prompt(sessionID: string, text: string): Promise<void>;
+  prompt(sessionID: string, text: string, model?: ModelRef): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -134,18 +134,9 @@ export function createLiveEnv(): LiveEnv {
     installPlugin(name, source) {
       symlinkSync(resolve(REPO_ROOT, source), join(dirs.config, "plugin", `${name}.ts`));
     },
-    async run(prompt, extraArgs = []) {
+    async run(prompt, extraArgs = [], model = LIVE_MODEL) {
       const proc = Bun.spawn(
-        [
-          "opencode",
-          "run",
-          "-m",
-          LIVE_MODEL,
-          "--dir",
-          dirs.work,
-          ...extraArgs,
-          ...prompt.split(" "),
-        ],
+        ["opencode", "run", "-m", model, "--dir", dirs.work, ...extraArgs, ...prompt.split(" ")],
         {
           env: sandboxEnv,
           stdout: "pipe",
@@ -255,9 +246,9 @@ async function startServer(
       }
       return id;
     },
-    async prompt(sessionID, text) {
+    async prompt(sessionID, text, model = liveModelRef()) {
       const response = await post(`/session/${sessionID}/message`, {
-        model: liveModelRef(),
+        model,
         parts: [{ type: "text", text }],
       });
       await response.text();

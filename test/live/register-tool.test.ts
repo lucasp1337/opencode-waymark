@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { at, liveEnvWithProbe, probeLines } from "./harness";
+import { runScripted } from "./scripted-provider";
 
 describe("registerTool", () => {
   test("agent can call a plugin tool built from plain JSON Schema with all supported types", async () => {
@@ -32,10 +33,8 @@ describe("registerTool", () => {
   test("the string returned by execute reaches the agent as the tool result", async () => {
     const env = liveEnvWithProbe();
 
-    const result = await env.run(
-      "Call the probe_echo tool with message zebra and reply with exactly the tool result text and nothing else.",
-    );
+    const provider = await runScripted(env, [{ tool: "probe_echo", args: { message: "zebra" } }]);
 
-    expect(result.stdout).toContain('echo:{"message":"zebra"}');
+    expect(provider.toolResults()).toEqual([expect.stringContaining('echo:{"message":"zebra"}')]);
   });
 });

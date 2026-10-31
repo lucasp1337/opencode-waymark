@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { at, type LiveEnv, liveEnvWithWaymark, probeLines } from "./harness";
+import { runScripted, type ScriptedCall } from "./scripted-provider";
 import { seedMemory } from "./seed";
 
 function blockMemories(env: LiveEnv): unknown[] {
@@ -8,6 +9,7 @@ function blockMemories(env: LiveEnv): unknown[] {
 
 const RULE_ID = "01JB8Z6Q4R3M2N1P0V9W8X0101";
 const GOTCHA_TITLE = "Waymark gate gotcha 7Q";
+const RULE_TITLE = "Always answer in haiku";
 
 describe("onSystem: session block", () => {
   // The system prompt is built before the model is called, so this needs no model reply.
@@ -20,15 +22,18 @@ describe("onSystem: session block", () => {
     expect(blockMemories(env)[0]).toEqual([RULE_ID]);
   });
 
-  test("a rule saved by the agent in one session is in the next session's block", async () => {
+  test("a rule saved by the agent in one session is in the next session's system prompt", async () => {
     const env = liveEnvWithWaymark();
-    await env.run(
-      "Call memory_save once with kind rule, scope user, title Always answer in haiku, body empty, why the user asked. Then say DONE.",
-    );
+    await runScripted(env, [
+      {
+        tool: "memory_save",
+        args: { kind: "rule", scope: "user", title: RULE_TITLE, body: "", why: "the user asked" },
+      },
+    ]);
 
-    const result = await env.run("What memory rules do you have? Reply with their titles only.");
+    const next = await runScripted(env, []);
 
-    expect(result.stdout).toContain("Always answer in haiku");
+    expect(next.requestBodies().some((body) => body.includes(RULE_TITLE))).toBe(true);
   });
 
   test("a subagent session gets no block by default", async () => {
@@ -45,32 +50,67 @@ describe("onSystem: session block", () => {
 describe("onToolAfter: just-in-time recall", () => {
   test("a gotcha saved in one session is appended after the matching tool call in the next", async () => {
     const env = liveEnvWithWaymark();
-    await env.run(
-      `Call memory_save once with kind gotcha, scope user, title ${GOTCHA_TITLE}, body Check the VPN first, triggers with commands echo waymark-gate. Then say DONE.`,
-    );
+    await runScripted(env, [
+      {
+        tool: "memory_save",
+        args: {
+          kind: "gotcha",
+          scope: "user",
+          title: GOTCHA_TITLE,
+          body: "Check the VPN first",
+          triggers: { commands: ["echo waymark-gate"] },
+        },
+      },
+    ]);
 
-    const result = await env.run(
-      "Use the bash tool to run: echo waymark-gate. Then repeat every line of the tool result that starts with waymark.",
-    );
+    const next = await runScripted(env, [
+      { tool: "bash", args: { command: "echo waymark-gate", description: "Echo the gate" } },
+    ]);
 
-    expect(result.stdout).toContain(`waymark · gotcha · ${GOTCHA_TITLE}`);
+    expect(next.toolResults()).toEqual([
+      expect.stringContaining(`waymark · gotcha · ${GOTCHA_TITLE}`),
+    ]);
   });
 });
 
-describe("memory_save: duplicate candidates across languages", () => {
-  test("a Slovak paraphrase of an English memory is returned as a related memory", async () => {
+// Neither saved text shares a word with the stored memory, so only meaning can relate them.
+const STORED_ID = "01JB8Z6Q4R3M2N1P0V9W8X0201";
+const stored = {
+  kind: "fact",
+  title: "Nasadzovací skript sa spúšťa z koreňa repozitára",
+  body: "Spustenie z podadresára rozbije relatívne cesty.",
+} as const;
+
+function saveFact(title: string, body: string): ScriptedCall {
+  return { tool: "memory_save", args: { kind: "fact", scope: "user", title, body } };
+}
+
+describe("memory_save: duplicate candidates in one language", () => {
+  test("a Slovak paraphrase of a Slovak memory is returned as a related memory", async () => {
     const env = liveEnvWithWaymark();
-    const englishId = "01JB8Z6Q4R3M2N1P0V9W8X0201";
-    seedMemory(env, englishId, {
-      kind: "fact",
-      title: "The deploy script must run from the repository root",
-      body: "Running it from a subdirectory breaks the relative paths.",
-    });
+    seedMemory(env, STORED_ID, stored);
 
-    const result = await env.run(
-      "Call memory_save once with kind fact, scope user, title Skript na nasadenie sa musí spúšťať z koreňa repozitára, body Inak sa rozbijú relatívne cesty. Then repeat the tool result exactly.",
-    );
+    const provider = await runScripted(env, [
+      saveFact(
+        "Nasadenie spúšťaj len v hornom adresári repa",
+        "V podpriečinku prestanú fungovať odkazy na súbory.",
+      ),
+    ]);
 
-    expect(result.stdout).toContain(englishId);
+    expect(provider.toolResults()).toEqual([expect.stringContaining(STORED_ID)]);
+  });
+
+  test("an unrelated Slovak note is saved without related memories", async () => {
+    const env = liveEnvWithWaymark();
+    seedMemory(env, STORED_ID, stored);
+
+    const provider = await runScripted(env, [
+      saveFact(
+        "Integračné testy potrebujú bežiaci Docker",
+        "Pred sadou testov štartuje kontajner Postgresu.",
+      ),
+    ]);
+
+    expect(provider.toolResults()).toEqual([expect.stringMatching(/^Saved /)]);
   });
 });

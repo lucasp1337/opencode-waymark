@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { at, type Json, type LiveEnv, liveEnvWithWaymark, parseJson, probeLines } from "./harness";
+import { runScripted } from "./scripted-provider";
 import { seedMemory } from "./seed";
 
 const API = "github.com/acme/api";
@@ -104,14 +105,17 @@ describe("onToolAfter: the product hint", () => {
     ]);
   });
 
-  test("the user's yes links the repos into the product they name", async () => {
+  test("memory_link with the hinted repos and a product name links them into that product", async () => {
     const env = liveEnvWithWaymark();
     twoRepos(env);
 
-    await env.run(
-      "Use the read tool on web/a.txt. If Waymark asks whether two repos are one product: the user says yes, the product is called payments; record that. Then say DONE.",
-    );
+    const provider = await runScripted(env, [
+      { tool: "read", args: { filePath: join(env.workDir, "web", "a.txt") } },
+      { tool: "read", args: { filePath: join(env.workDir, "web", "b.txt") } },
+      { tool: "memory_link", args: { repos: [API, WEB], product: "payments" } },
+    ]);
 
+    expect(provider.toolResults().join("\n")).toContain(`["${API}", "${WEB}"]`);
     expect(at(readRegistry(env), "products", "payments", "repos")).toEqual([API, WEB]);
   });
 

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { at, type Json, type LiveEnv, liveEnvWithWaymark, parseJson } from "./harness";
+import { runScripted, type ScriptedCall, type ScriptedProvider } from "./scripted-provider";
 import { seedMemory } from "./seed";
 
 const FACT_ID = "01JB8Z6Q4R3M2N1P0V9W8X0301";
@@ -32,6 +33,11 @@ async function listedNames(env: LiveEnv, path: string): Promise<Json[]> {
   }
 }
 
+// The scripted model makes the one tool call the command's template asks for.
+function runMemory(env: LiveEnv, args: string, call: ScriptedCall): Promise<ScriptedProvider> {
+  return runScripted(env, [call], { prompt: args, args: ["--command", "memory"] });
+}
+
 describe("registerCommand: Waymark's commands", () => {
   // Listing asks the server, not the model.
   test("opencode lists /memory, /remember and /forget", async () => {
@@ -54,18 +60,21 @@ describe("registerCommand: Waymark's commands", () => {
     const env = liveEnvWithWaymark();
     seedMemory(env, FACT_ID, fact);
 
-    const result = await env.run("", ["--command", "memory"]);
+    const provider = await runMemory(env, "", { tool: "memory_command", args: { args: "" } });
 
-    expect(result.stdout).toContain(fact.title);
+    expect(provider.toolResults()).toEqual([expect.stringContaining(fact.title)]);
   });
 
   test("/memory review reports that nothing needs review", async () => {
     const env = liveEnvWithWaymark();
     seedMemory(env, FACT_ID, fact);
 
-    const result = await env.run("review", ["--command", "memory"]);
+    const provider = await runMemory(env, "review", {
+      tool: "memory_command",
+      args: { args: "review" },
+    });
 
-    expect(result.stdout.toLowerCase()).toContain("nothing needs review");
+    expect(provider.toolResults()).toEqual([expect.stringContaining("Nothing needs review")]);
   });
 
   test("/memory move moves a memory to the repo scope", async () => {
@@ -73,7 +82,8 @@ describe("registerCommand: Waymark's commands", () => {
     makeRepo(env);
     seedMemory(env, FACT_ID, fact);
 
-    await env.run(`move ${FACT_ID} repo`, ["--command", "memory"]);
+    const move = `move ${FACT_ID} repo`;
+    await runMemory(env, move, { tool: "memory_command", args: { args: move } });
 
     expect(
       existsSync(waymarkFile(env, "repos", "github.com/acme/api", "fact", `${FACT_ID}.md`)),
@@ -94,34 +104,44 @@ describe("registerCommand: Waymark's commands", () => {
       }),
     );
 
-    await env.run("org merge github.com/acme github.com/acme-labs", ["--command", "memory"]);
+    const merge = "org merge github.com/acme github.com/acme-labs";
+    await runMemory(env, merge, { tool: "memory_command", args: { args: merge } });
 
     const registry = parseJson(readFileSync(waymarkFile(env, "registry.json"), "utf8"));
     expect(at(registry, "aliases", "github.com/acme-labs")).toBe("github.com/acme");
   });
 
-  test("/memory setup with Quick and Lean writes the Lean preset", async () => {
+  test("/memory setup with the Lean preset writes the Lean preset", async () => {
     const env = liveEnvWithWaymark();
 
-    await env.run("setup", ["--command", "memory"]);
-    await env.run("Quick, Lean.", ["--continue"]);
+    await runMemory(env, "setup", { tool: "memory_config", args: { preset: "lean" } });
 
     expect(readFileSync(waymarkFile(env, "config.jsonc"), "utf8")).toContain('"lean"');
   });
 
   test("/remember saves the text as a memory", async () => {
     const env = liveEnvWithWaymark();
+    const save = {
+      tool: "memory_save",
+      args: { kind: "preference", scope: "user", title: "Answers without emoji", body: "" },
+    };
 
-    const result = await env.run("I prefer answers without emoji", ["--command", "remember"]);
+    const provider = await runScripted(env, [save], {
+      prompt: "I prefer answers without emoji",
+      args: ["--command", "remember"],
+    });
 
-    expect(result.stdout).toContain("Saved");
+    expect(provider.toolResults()).toEqual([expect.stringMatching(/^Saved /)]);
   });
 
   test("/forget with an id forgets that memory", async () => {
     const env = liveEnvWithWaymark();
     const file = seedMemory(env, FACT_ID, fact);
 
-    await env.run(FACT_ID, ["--command", "forget"]);
+    await runScripted(env, [{ tool: "memory_forget", args: { id: FACT_ID } }], {
+      prompt: FACT_ID,
+      args: ["--command", "forget"],
+    });
 
     expect(existsSync(file)).toBe(false);
   });
