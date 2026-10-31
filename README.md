@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/lucasp1337/opencode-waymark/main/docs/assets/banner.png" alt="Waymark: persistent, local-only memory for opencode agents" width="100%">
+  <img src="docs/assets/banner.png" alt="Waymark: persistent, local-only memory for opencode agents" width="100%">
 </p>
 
 An [opencode](https://opencode.ai) plugin that gives agents persistent, local-only memory across sessions.
