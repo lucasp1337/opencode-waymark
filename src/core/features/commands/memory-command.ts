@@ -1,4 +1,3 @@
-import { activeOnly } from "../../model/memory";
 import { ownField } from "../../model/own-field";
 import { err, ok, type Result } from "../../model/result";
 import type { ScopeChain } from "../../model/scope";
@@ -44,15 +43,15 @@ async function runCommand(
   const chain = await deps.scopes.chainFor(sessionID);
   switch (command.name) {
     case "list":
-      return listChain(chain, activeOnly(deps.store.inScopes(chain)));
+      return listChain(deps, chain);
     case "review":
       return reviewReport(deps.store, chain, deps.reviewSignals(chain));
     case "move":
       return await moveMemory(deps, command, chain);
     case "link":
-      return linkSessionRepo(deps, chain, command.product);
+      return await linkSessionRepo(deps, chain, command.product);
     case "unlink":
-      return unlinkSessionRepo(deps, chain);
+      return await unlinkSessionRepo(deps, chain);
   }
 }
 

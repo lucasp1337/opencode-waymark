@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { LIVE_MODEL, liveEnvWithWaymark } from "./harness";
+import { liveEnvWithWaymark, liveModelRef } from "./harness";
 
 describe("onCompaction: Waymark's note", () => {
   test("the compaction summary ends with what is not yet saved to memory", async () => {
@@ -12,7 +12,7 @@ describe("onCompaction: Waymark's note", () => {
       await server.api(`/session/${sessionID}/summarize`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ providerID: "opencode", modelID: LIVE_MODEL.split("/")[1] }),
+        body: JSON.stringify(liveModelRef()),
       });
 
       const messages = await (await server.api(`/session/${sessionID}/message`)).text();

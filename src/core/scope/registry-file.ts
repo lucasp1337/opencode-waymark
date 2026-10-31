@@ -12,8 +12,8 @@ function parseJson(text: string): Result<unknown, string> {
   try {
     const parsed: unknown = JSON.parse(text);
     return ok(parsed);
-  } catch {
-    return err("is not valid JSON");
+  } catch (error) {
+    return err(`is not valid JSON (${error instanceof Error ? error.message : String(error)})`);
   }
 }
 
@@ -67,6 +67,16 @@ export function writeRegistry(fs: FileSystem, file: string, document: JsonObject
 export function catchRegistryIo<T>(read: () => Result<T, string>): Result<T, string> {
   try {
     return read();
+  } catch (error) {
+    return err(String(error));
+  }
+}
+
+export async function catchRegistryIoAsync<T>(
+  read: () => Promise<Result<T, string>>,
+): Promise<Result<T, string>> {
+  try {
+    return await read();
   } catch (error) {
     return err(String(error));
   }

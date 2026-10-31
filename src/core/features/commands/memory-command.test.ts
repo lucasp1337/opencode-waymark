@@ -125,6 +125,44 @@ describe("memory_command with no arguments", () => {
   });
 });
 
+describe("memory_command listing of a long scope and a linked product", () => {
+  test("lists at most 40 memories of a scope and says how many more there are", async () => {
+    const fx = fixture();
+    for (let n = 1; n <= 43; n++) {
+      fx.seed({ n, scope: USER, content: { kind: "fact", title: `Fact ${n}`, body: "" } });
+    }
+
+    const listing = await fx.run("");
+
+    expect(listing).toContain("## user (43)");
+    expect(listing.match(/^- \[/gm)).toHaveLength(40);
+    expect(listing).toContain("+3 more — use memory_search");
+  });
+
+  test("shows no overflow line while a scope fits", async () => {
+    const fx = fixture();
+    fx.seed({ n: 1, scope: USER, content: { kind: "fact", title: "Mine", body: "" } });
+
+    expect(await fx.run("")).not.toContain("more");
+  });
+
+  test("names the linked product and its repos at the top", async () => {
+    const fx = fixture();
+    await fx.run("link payments");
+    await fx.run("link payments", WEB_SESSION);
+
+    expect(await fx.run("")).toStartWith(
+      "Product payments: github.com/acme/api, github.com/acme-labs/web\n\n## user",
+    );
+  });
+
+  test("a repo without a product has no product line", async () => {
+    const fx = fixture();
+
+    expect(await fx.run("")).not.toContain("Product");
+  });
+});
+
 describe("memory_command review", () => {
   const signals = (leftIndex: number[], noisy: number[]) => ({
     leftIndex: leftIndex.map(idNumber),

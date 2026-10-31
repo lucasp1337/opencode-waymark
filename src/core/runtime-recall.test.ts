@@ -113,6 +113,27 @@ describe("just-in-time recall", () => {
   });
 });
 
+describe("memories changed mid-session", () => {
+  test("a session's own memory_update is not echoed back, while another session is told", async () => {
+    const fx = runtime();
+    fx.host.sessions.set("ses_other", { id: "ses_other", directory: "/work/api" });
+    await fx.host.emitSystem(SESSION);
+    await fx.host.emitSystem("ses_other");
+    await fx.host.callTool("memory_save", rule, SESSION);
+    await fx.host.callTool(
+      "memory_update",
+      { id: FIRST_ID, why: "CI fails on lint errors" },
+      SESSION,
+    );
+
+    const own = await fx.host.emitToolAfter(bashCall(SESSION));
+    const other = await fx.host.emitToolAfter(bashCall("ses_other"));
+
+    expect(own).toEqual([]);
+    expect(other).toEqual([expect.stringContaining("CI fails on lint errors")]);
+  });
+});
+
 describe("keyword recall", () => {
   test("a gotcha triggered by a word of the user's message is appended to the next tool output", async () => {
     const fx = runtime();

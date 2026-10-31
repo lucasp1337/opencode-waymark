@@ -47,9 +47,9 @@ function countingFileSystem(): { fs: FileSystem; writes: string[] } {
   return { fs, writes };
 }
 
-function linked(product: string, ...repos: string[]): string {
+async function linked(product: string, ...repos: string[]): Promise<string> {
   const file = registryFile();
-  linkRepos(nodeFileSystem, file, { repos, product });
+  await linkRepos(nodeFileSystem, file, { repos, product });
   return file;
 }
 
@@ -74,83 +74,85 @@ describe("productNameOf", () => {
 });
 
 describe("linkRepos", () => {
-  test("creates a named product with the repos", () => {
+  test("creates a named product with the repos", async () => {
     const file = registryFile();
 
-    expect(linkRepos(nodeFileSystem, file, { repos: [API, WEB], product: "payments" })).toEqual({
+    expect(
+      await linkRepos(nodeFileSystem, file, { repos: [API, WEB], product: "payments" }),
+    ).toEqual({
       ok: true,
       value: { product: "payments", repos: [API, WEB], created: true },
     });
     expect(readJson(file)).toEqual({ products: { payments: { repos: [API, WEB] } } });
   });
 
-  test("a repo joins an existing product after the repos already in it", () => {
-    const file = linked("payments", API, WEB);
+  test("a repo joins an existing product after the repos already in it", async () => {
+    const file = await linked("payments", API, WEB);
 
-    expect(linkRepos(nodeFileSystem, file, { repos: [DOCS], product: "payments" })).toEqual({
+    expect(await linkRepos(nodeFileSystem, file, { repos: [DOCS], product: "payments" })).toEqual({
       ok: true,
       value: { product: "payments", repos: [API, WEB, DOCS], created: false },
     });
   });
 
-  test("without a name the repos join the product one of them is in", () => {
-    const file = linked("payments", API);
+  test("without a name the repos join the product one of them is in", async () => {
+    const file = await linked("payments", API);
 
-    expect(linkRepos(nodeFileSystem, file, { repos: [API, WEB] })).toEqual({
+    expect(await linkRepos(nodeFileSystem, file, { repos: [API, WEB] })).toEqual({
       ok: true,
       value: { product: "payments", repos: [API, WEB], created: false },
     });
   });
 
-  test("linking a repo that is already in the product adds it once", () => {
-    const file = linked("payments", API, WEB);
+  test("linking a repo that is already in the product adds it once", async () => {
+    const file = await linked("payments", API, WEB);
 
-    linkRepos(nodeFileSystem, file, { repos: [WEB, API], product: "payments" });
+    await linkRepos(nodeFileSystem, file, { repos: [WEB, API], product: "payments" });
 
     expect(readJson(file)).toEqual({ products: { payments: { repos: [API, WEB] } } });
   });
 
-  test("without a name and no product among the repos, nothing is linked", () => {
+  test("without a name and no product among the repos, nothing is linked", async () => {
     const file = registryFile();
     const { fs, writes } = countingFileSystem();
 
-    expect(linkRepos(fs, file, { repos: [API, WEB] })).toEqual({
+    expect(await linkRepos(fs, file, { repos: [API, WEB] })).toEqual({
       ok: false,
       error: "none of these repos is in a product yet; name the product to create.",
     });
     expect(writes).toEqual([]);
   });
 
-  test("without a name, repos in two products are refused", () => {
-    const file = linked("payments", API);
-    linkRepos(nodeFileSystem, file, { repos: [WEB], product: "storefront" });
+  test("without a name, repos in two products are refused", async () => {
+    const file = await linked("payments", API);
+    await linkRepos(nodeFileSystem, file, { repos: [WEB], product: "storefront" });
 
-    expect(linkRepos(nodeFileSystem, file, { repos: [API, WEB] })).toEqual({
+    expect(await linkRepos(nodeFileSystem, file, { repos: [API, WEB] })).toEqual({
       ok: false,
       error:
         "these repos are in different products: payments, storefront. A repo leaves its product with /memory unlink.",
     });
   });
 
-  test("a repo in another product is refused and named, and nothing is written", () => {
-    const file = linked("storefront", WEB);
+  test("a repo in another product is refused and named, and nothing is written", async () => {
+    const file = await linked("storefront", WEB);
     const { fs, writes } = countingFileSystem();
 
-    expect(linkRepos(fs, file, { repos: [API, WEB], product: "payments" })).toEqual({
+    expect(await linkRepos(fs, file, { repos: [API, WEB], product: "payments" })).toEqual({
       ok: false,
       error: `${WEB} is in product storefront. A repo leaves its product with /memory unlink.`,
     });
     expect(writes).toEqual([]);
   });
 
-  test("keys and product fields this version does not know are preserved", () => {
+  test("keys and product fields this version does not know are preserved", async () => {
     const file = registryFile({
       version: 3,
       orgs: { "github.com/acme": { owner: "acme" } },
       products: { payments: { repos: [API], note: "kept" } },
     });
 
-    linkRepos(nodeFileSystem, file, { repos: [WEB], product: "payments" });
+    await linkRepos(nodeFileSystem, file, { repos: [WEB], product: "payments" });
 
     expect(readJson(file)).toEqual({
       version: 3,
@@ -161,15 +163,15 @@ describe("linkRepos", () => {
 });
 
 describe("productOf", () => {
-  test("names the product a repo is linked to", () => {
-    expect(productOf(nodeFileSystem, linked("payments", API, WEB), WEB)).toEqual({
+  test("names the product a repo is linked to", async () => {
+    expect(productOf(nodeFileSystem, await linked("payments", API, WEB), WEB)).toEqual({
       ok: true,
       value: "payments",
     });
   });
 
-  test("is undefined for a repo in no product, also without a registry file", () => {
-    expect(productOf(nodeFileSystem, linked("payments", API), WEB)).toEqual({
+  test("is undefined for a repo in no product, also without a registry file", async () => {
+    expect(productOf(nodeFileSystem, await linked("payments", API), WEB)).toEqual({
       ok: true,
       value: undefined,
     });
@@ -178,10 +180,10 @@ describe("productOf", () => {
 });
 
 describe("unlinkRepo", () => {
-  test("takes the repo out and records a No for it with each repo left", () => {
-    const file = linked("payments", API, WEB, DOCS);
+  test("takes the repo out and records a No for it with each repo left", async () => {
+    const file = await linked("payments", API, WEB, DOCS);
 
-    expect(unlinkRepo(nodeFileSystem, file, WEB)).toEqual({
+    expect(await unlinkRepo(nodeFileSystem, file, WEB)).toEqual({
       ok: true,
       value: { product: "payments", remaining: [API, DOCS] },
     });
@@ -194,24 +196,24 @@ describe("unlinkRepo", () => {
     });
   });
 
-  test("the last repo leaves the product's name behind for a later link", () => {
-    const file = linked("payments", API);
+  test("the last repo leaves the product's name behind for a later link", async () => {
+    const file = await linked("payments", API);
 
-    unlinkRepo(nodeFileSystem, file, API);
+    await unlinkRepo(nodeFileSystem, file, API);
 
     expect(readJson(file)).toEqual({ products: { payments: { repos: [] } }, declined: [] });
-    expect(linkRepos(nodeFileSystem, file, { repos: [API], product: "payments" })).toEqual({
+    expect(await linkRepos(nodeFileSystem, file, { repos: [API], product: "payments" })).toEqual({
       ok: true,
       value: { product: "payments", repos: [API], created: false },
     });
   });
 
-  test("a No already recorded is not recorded twice", () => {
-    const file = linked("payments", API, WEB);
-    declinePair(nodeFileSystem, file, [DOCS, API]);
-    linkRepos(nodeFileSystem, file, { repos: [DOCS], product: "payments" });
+  test("a No already recorded is not recorded twice", async () => {
+    const file = await linked("payments", API, WEB);
+    await declinePair(nodeFileSystem, file, [DOCS, API]);
+    await linkRepos(nodeFileSystem, file, { repos: [DOCS], product: "payments" });
 
-    unlinkRepo(nodeFileSystem, file, DOCS);
+    await unlinkRepo(nodeFileSystem, file, DOCS);
 
     expect(readJson(file)).toMatchObject({
       declined: [
@@ -221,11 +223,11 @@ describe("unlinkRepo", () => {
     });
   });
 
-  test("a repo in no product is refused and nothing is written", () => {
-    const file = linked("payments", API);
+  test("a repo in no product is refused and nothing is written", async () => {
+    const file = await linked("payments", API);
     const { fs, writes } = countingFileSystem();
 
-    expect(unlinkRepo(fs, file, WEB)).toEqual({
+    expect(await unlinkRepo(fs, file, WEB)).toEqual({
       ok: false,
       error: `${WEB} is not in a product.`,
     });
@@ -234,21 +236,21 @@ describe("unlinkRepo", () => {
 });
 
 describe("declinePair", () => {
-  test("records the pair once, whatever its order", () => {
+  test("records the pair once, whatever its order", async () => {
     const file = registryFile();
     const { fs, writes } = countingFileSystem();
 
-    expect(declinePair(fs, file, [WEB, API])).toEqual({ ok: true, value: undefined });
-    declinePair(fs, file, [API, WEB]);
+    expect(await declinePair(fs, file, [WEB, API])).toEqual({ ok: true, value: undefined });
+    await declinePair(fs, file, [API, WEB]);
 
     expect(readJson(file)).toEqual({ declined: [[API, WEB]] });
     expect(writes).toHaveLength(1);
   });
 
-  test("two repos of one product cannot be declined", () => {
-    const file = linked("payments", API, WEB);
+  test("two repos of one product cannot be declined", async () => {
+    const file = await linked("payments", API, WEB);
 
-    expect(declinePair(nodeFileSystem, file, [API, WEB])).toEqual({
+    expect(await declinePair(nodeFileSystem, file, [API, WEB])).toEqual({
       ok: false,
       error: `${API} and ${WEB} are linked as product payments; /memory unlink separates them.`,
     });
@@ -256,9 +258,9 @@ describe("declinePair", () => {
 });
 
 describe("pairStatus", () => {
-  test("reports the product of each repo and a recorded No in either order", () => {
-    const file = linked("payments", API);
-    declinePair(nodeFileSystem, file, [API, WEB]);
+  test("reports the product of each repo and a recorded No in either order", async () => {
+    const file = await linked("payments", API);
+    await declinePair(nodeFileSystem, file, [API, WEB]);
 
     expect(pairStatus(nodeFileSystem, file, [WEB, API])).toEqual({
       ok: true,
@@ -266,13 +268,13 @@ describe("pairStatus", () => {
     });
   });
 
-  test("a pair written unsorted by hand is still found, and rewritten sorted", () => {
+  test("a pair written unsorted by hand is still found, and rewritten sorted", async () => {
     const file = registryFile({ declined: [[WEB, API]] });
 
     expect(pairStatus(nodeFileSystem, file, [API, WEB])).toMatchObject({
       value: { declined: true },
     });
-    declinePair(nodeFileSystem, file, [API, DOCS]);
+    await declinePair(nodeFileSystem, file, [API, DOCS]);
     expect(readJson(file)).toEqual({
       declined: [
         [API, WEB],
@@ -323,26 +325,25 @@ describe("a registry that cannot be understood", () => {
       { declined: [[API, WEB, DOCS]] },
       '"declined" must be a list of repo id pairs',
     ],
-  ])("with %s is reported and left unchanged", (_case, content, problem) => {
+  ])("with %s is reported and left unchanged", async (_case, content, problem) => {
     const file = registryFile(content);
     const { fs, writes } = countingFileSystem();
     const expected = err(`registry ${file} ${problem}`);
 
     expect(productOf(fs, file, API)).toEqual(expected);
     expect(pairStatus(fs, file, [API, WEB])).toEqual(expected);
-    expect(linkRepos(fs, file, { repos: [API], product: "payments" })).toEqual(expected);
-    expect(unlinkRepo(fs, file, API)).toEqual(expected);
-    expect(declinePair(fs, file, [API, WEB])).toEqual(expected);
+    expect(await linkRepos(fs, file, { repos: [API], product: "payments" })).toEqual(expected);
+    expect(await unlinkRepo(fs, file, API)).toEqual(expected);
+    expect(await declinePair(fs, file, [API, WEB])).toEqual(expected);
     expect(writes).toEqual([]);
   });
 
   test("corrupt JSON is reported with the file's name", () => {
     const file = registryFile("{ not json");
 
-    expect(productOf(nodeFileSystem, file, API)).toEqual({
-      ok: false,
-      error: `registry ${file} is not valid JSON`,
-    });
+    const result = productOf(nodeFileSystem, file, API);
+
+    expect(!result.ok && result.error).toStartWith(`registry ${file} is not valid JSON (`);
   });
 
   test("an I/O error from the file system propagates instead of becoming an error value", () => {

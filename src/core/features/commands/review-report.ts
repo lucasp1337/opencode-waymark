@@ -1,6 +1,7 @@
 import type { MemoryId } from "../../model/id";
 import { activeOnly, type Memory } from "../../model/memory";
 import type { ScopeChain } from "../../model/scope";
+import { unmetRequirements } from "../../model/validate";
 import type { MemoryStore } from "../../store/memory-store";
 import { memoryLine } from "../memory-line";
 
@@ -14,7 +15,7 @@ export interface ReviewSignals {
 type ReviewStore = Pick<MemoryStore, "get" | "inScopes">;
 
 const NOTHING_TO_REVIEW =
-  "Nothing needs review: no memory is superseded, none left the session index and no gotcha fires often.";
+  "Nothing needs review: no memory is superseded or incomplete, none left the session index and no gotcha fires often.";
 
 const OFFER =
   "Offer the user, for each: keep it; forget it (memory_forget); merge it into another memory (memory_update on that one, then memory_forget this); or turn it into a rule (memory_save with kind rule and a why, then memory_forget this).";
@@ -28,6 +29,13 @@ function supersededLines(memories: readonly Memory[]): string[] {
       const suffix = replacement === undefined ? "" : ` (replaced by [${replacement.id}])`;
       return `- ${memoryLine(memory)}${suffix}`;
     });
+}
+
+function missingFieldLines(memories: readonly Memory[]): string[] {
+  return activeOnly(memories).flatMap((memory) => {
+    const missing = unmetRequirements(memory);
+    return missing.length === 0 ? [] : [`- ${memoryLine(memory)} (missing ${missing.join(", ")})`];
+  });
 }
 
 function signalLines(store: ReviewStore, ids: readonly MemoryId[]): string[] {
@@ -46,6 +54,10 @@ export function reviewReport(
     {
       heading: "Superseded, still on disk:",
       lines: supersededLines(store.inScopes(chain)),
+    },
+    {
+      heading: "Missing a required field, fix with memory_update:",
+      lines: missingFieldLines(store.inScopes(chain)),
     },
     {
       heading: "Left the session index, still searchable:",

@@ -1,20 +1,27 @@
-const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\/\S/i;
-const ANCHORED_PATH = /^(~|\.{1,2})?[/\\]\S|^[A-Za-z]:[/\\]/;
-const PATH_WITH_FILE = /[/\\][^/\\]*[^/\\.]\.[A-Za-z0-9]+$/;
-const DIRECTORY_PATH = /^[^/\\]+([/\\][^/\\]+)*[/\\]$/;
-const TICKET_KEY = /^[A-Z][A-Z0-9]+-\d+$/;
-const LEADING_PUNCTUATION = /^[("'`<[]+/;
-const TRAILING_PUNCTUATION = /[)"'`>\],.;:!?]+$/;
+import { err, ok, type Result } from "./result";
 
-// Structural only: a URL, an anchored path, a path naming a file or directory, or a ticket key.
-// Ticket-shaped tokens such as "UTF-8" also pass; the agent owns the content.
-function isLocator(token: string): boolean {
-  const core = token.replace(LEADING_PUNCTUATION, "").replace(TRAILING_PUNCTUATION, "");
-  return [URL_SCHEME, ANCHORED_PATH, PATH_WITH_FILE, DIRECTORY_PATH, TICKET_KEY].some((shape) =>
-    shape.test(core),
-  );
+declare const locatorBrand: unique symbol;
+
+// Where a reference points. Its content is the agent's; only its shape is checked.
+export type Locator = string & { readonly [locatorBrand]: true };
+
+export const MAX_LOCATOR_LENGTH = 500;
+
+const LINE_BREAK = /[\r\n]/;
+
+function isLocator(text: string): text is Locator {
+  return text !== "" && !LINE_BREAK.test(text) && text.length <= MAX_LOCATOR_LENGTH;
 }
 
-export function hasLocator(text: string): boolean {
-  return text.split(/\s+/).some(isLocator);
+export function parseLocator(value: unknown): Result<Locator, string> {
+  if (typeof value !== "string" || value.trim() === "") {
+    return err("locator must be a non-empty string");
+  }
+  const trimmed = value.trim();
+  if (LINE_BREAK.test(trimmed)) {
+    return err("locator must be a single line");
+  }
+  return isLocator(trimmed)
+    ? ok(trimmed)
+    : err(`locator must be at most ${MAX_LOCATOR_LENGTH} characters`);
 }

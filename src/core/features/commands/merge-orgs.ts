@@ -36,7 +36,7 @@ export async function mergeOrgs(deps: MergeDeps, merge: OrgMerge): Promise<strin
   for (const memory of moving) {
     deps.store.save(relocated(memory, target, now));
   }
-  const recorded = recordMerge(deps.fs, deps.registryFile, merge);
+  const recorded = await recordMerge(deps.fs, deps.registryFile, merge);
   if (!recorded.ok) {
     deps.host.log("warn", "org merge not recorded", { ...merge, error: recorded.error });
     return `Memories moved to ${merge.into} but the merge was not recorded; run /memory org merge ${merge.into} ${merge.from} again.`;

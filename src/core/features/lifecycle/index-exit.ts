@@ -25,17 +25,16 @@ export function hasLeftIndex(memory: Memory, usage: IndexUsage): boolean {
   );
 }
 
-// Epoch for never read, so those sort after every real read.
-function lastReadAt(memory: Memory, usage: IndexUsage): number {
-  return statsOf(memory, usage).lastRead?.getTime() ?? 0;
+// A new or just edited memory competes with the ones read lately; otherwise a full index would
+// admit nothing until something was read.
+function activityAt(memory: Memory, usage: IndexUsage): number {
+  return Math.max(statsOf(memory, usage).lastRead?.getTime() ?? 0, Date.parse(memory.updated));
 }
 
-// The facts and decisions the index may show: those still in use, most recently read first and,
-// among equals, most recently updated first. The rest stay readable and searchable.
+// The facts and decisions the index may show: those still in use, most recently read or updated
+// first. The rest stay readable and searchable.
 export function visibleIndex(memories: readonly Memory[], usage: IndexUsage): Memory[] {
   return memories
     .filter((memory) => isIndexed(memory.kind) && !hasLeftIndex(memory, usage))
-    .toSorted(
-      (a, b) => lastReadAt(b, usage) - lastReadAt(a, usage) || b.updated.localeCompare(a.updated),
-    );
+    .toSorted((a, b) => activityAt(b, usage) - activityAt(a, usage));
 }

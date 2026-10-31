@@ -10,6 +10,7 @@ import {
   objectField,
   writeRegistry,
 } from "./registry-file";
+import { type LockTiming, systemLockTiming, withRegistryLock } from "./registry-lock";
 
 // Two repos the user said are not one product, sorted so the pair has one spelling.
 type RepoPair = readonly [string, string];
@@ -137,6 +138,16 @@ export function productOf(
   return registry.ok ? ok(productIn(registry.value.parsed, repo)) : registry;
 }
 
+// The repos linked to a product; none when the product is not in the registry.
+export function productRepos(
+  fs: FileSystem,
+  file: string,
+  product: string,
+): Result<readonly string[], string> {
+  const registry = load(fs, file);
+  return registry.ok ? ok(registry.value.parsed.repos.get(product) ?? []) : registry;
+}
+
 export interface PairStatus {
   readonly products: readonly [string | undefined, string | undefined];
   readonly declined: boolean;
@@ -222,20 +233,23 @@ export function linkRepos(
   fs: FileSystem,
   file: string,
   request: LinkRequest,
-): Result<Linked, string> {
-  const registry = load(fs, file);
-  if (!registry.ok) {
-    return registry;
-  }
-  const products = registry.value.parsed;
-  const target = targetProduct(products, request);
-  if (!target.ok) {
-    return target;
-  }
-  const before = products.repos.get(target.value);
-  const repos = [...new Set([...(before ?? []), ...request.repos])];
-  writeRegistry(fs, file, withProduct(registry.value, target.value, repos));
-  return ok({ product: target.value, repos, created: before === undefined });
+  timing: LockTiming = systemLockTiming,
+): Promise<Result<Linked, string>> {
+  return withRegistryLock(fs, file, timing, () => {
+    const registry = load(fs, file);
+    if (!registry.ok) {
+      return registry;
+    }
+    const products = registry.value.parsed;
+    const target = targetProduct(products, request);
+    if (!target.ok) {
+      return target;
+    }
+    const before = products.repos.get(target.value);
+    const repos = [...new Set([...(before ?? []), ...request.repos])];
+    writeRegistry(fs, file, withProduct(registry.value, target.value, repos));
+    return ok({ product: target.value, repos, created: before === undefined });
+  });
 }
 
 export interface Unlinked {
@@ -254,21 +268,28 @@ function withDeclined(
 }
 
 // The product keeps its name and memories; linking a repo to it again brings them back.
-export function unlinkRepo(fs: FileSystem, file: string, repo: string): Result<Unlinked, string> {
-  const registry = load(fs, file);
-  if (!registry.ok) {
-    return registry;
-  }
-  const products = registry.value.parsed;
-  const product = productIn(products, repo);
-  if (product === undefined) {
-    return err(`${repo} is not in a product.`);
-  }
-  const remaining = (products.repos.get(product) ?? []).filter((linked) => linked !== repo);
-  const unlinked = withProduct(registry.value, product, remaining);
-  const pairs = remaining.map((other) => pairOf(repo, other));
-  writeRegistry(fs, file, withDeclined(unlinked, products, pairs));
-  return ok({ product, remaining });
+export function unlinkRepo(
+  fs: FileSystem,
+  file: string,
+  repo: string,
+  timing: LockTiming = systemLockTiming,
+): Promise<Result<Unlinked, string>> {
+  return withRegistryLock(fs, file, timing, () => {
+    const registry = load(fs, file);
+    if (!registry.ok) {
+      return registry;
+    }
+    const products = registry.value.parsed;
+    const product = productIn(products, repo);
+    if (product === undefined) {
+      return err(`${repo} is not in a product.`);
+    }
+    const remaining = (products.repos.get(product) ?? []).filter((linked) => linked !== repo);
+    const unlinked = withProduct(registry.value, product, remaining);
+    const pairs = remaining.map((other) => pairOf(repo, other));
+    writeRegistry(fs, file, withDeclined(unlinked, products, pairs));
+    return ok({ product, remaining });
+  });
 }
 
 // Records the user's No for two repos, so they are never suggested as one product again.
@@ -276,18 +297,21 @@ export function declinePair(
   fs: FileSystem,
   file: string,
   [a, b]: readonly [string, string],
-): Result<void, string> {
-  const registry = load(fs, file);
-  if (!registry.ok) {
-    return registry;
-  }
-  const products = registry.value.parsed;
-  const shared = productIn(products, a);
-  if (shared !== undefined && shared === productIn(products, b)) {
-    return err(`${a} and ${b} are linked as product ${shared}; /memory unlink separates them.`);
-  }
-  if (!isDeclinedIn(products, a, b)) {
-    writeRegistry(fs, file, withDeclined(registry.value.document, products, [pairOf(a, b)]));
-  }
-  return ok(undefined);
+  timing: LockTiming = systemLockTiming,
+): Promise<Result<void, string>> {
+  return withRegistryLock(fs, file, timing, () => {
+    const registry = load(fs, file);
+    if (!registry.ok) {
+      return registry;
+    }
+    const products = registry.value.parsed;
+    const shared = productIn(products, a);
+    if (shared !== undefined && shared === productIn(products, b)) {
+      return err(`${a} and ${b} are linked as product ${shared}; /memory unlink separates them.`);
+    }
+    if (!isDeclinedIn(products, a, b)) {
+      writeRegistry(fs, file, withDeclined(registry.value.document, products, [pairOf(a, b)]));
+    }
+    return ok(undefined);
+  });
 }

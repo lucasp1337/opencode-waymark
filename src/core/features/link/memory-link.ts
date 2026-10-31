@@ -92,12 +92,12 @@ function parseInput(input: unknown): Result<LinkInput, string[]> {
   return ok({ decline: false, request: { repos: repos.value, ...request } });
 }
 
-function record(deps: LinkDeps, input: LinkInput): string {
+async function record(deps: LinkDeps, input: LinkInput): Promise<string> {
   if (input.decline) {
-    const declined = declinePair(deps.fs, deps.registryFile, input.pair);
+    const declined = await declinePair(deps.fs, deps.registryFile, input.pair);
     return declined.ok ? declinedReply(input.pair) : `Not recorded: ${declined.error}`;
   }
-  const linked = linkRepos(deps.fs, deps.registryFile, input.request);
+  const linked = await linkRepos(deps.fs, deps.registryFile, input.request);
   return linked.ok ? linkedReply(linked.value) : `Not linked: ${linked.error}`;
 }
 
@@ -107,12 +107,11 @@ export function memoryLinkTool(deps: LinkDeps): ToolDef {
     description:
       "Record the user's answer about linking repos into one product, whose memories apply in all of its repos. Call only after asking the user: with product to create or join one, without product to join the product one of the repos is in, or with decline true when the user said no.",
     inputSchema: INPUT_SCHEMA,
-    execute: (input) => {
+    execute: async (input) => {
       const parsed = parseInput(input);
-      const reply = parsed.ok
-        ? record(deps, parsed.value)
+      return parsed.ok
+        ? await record(deps, parsed.value)
         : `Not linked: ${parsed.error.join("; ")}`;
-      return Promise.resolve(reply);
     },
   };
 }

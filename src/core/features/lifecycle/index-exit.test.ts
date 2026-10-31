@@ -129,25 +129,31 @@ describe("visibleIndex order", () => {
     expect(titles(visibleIndex([a, b, c], seen))).toEqual(["Fact 3", "Fact 1", "Fact 2"]);
   });
 
-  test("orders memories with the same last read by most recently updated", () => {
+  test("orders never-read memories by most recently updated", () => {
     const older = fact(1, after(CREATED, DAY_MS));
     const newer = fact(2, after(CREATED, 2 * DAY_MS));
 
     expect(titles(visibleIndex([older, newer], usage([], NOW)))).toEqual(["Fact 2", "Fact 1"]);
   });
 
-  test("orders by last read before update", () => {
-    const readLong = fact(1, after(CREATED, 5 * DAY_MS));
-    const readLately = fact(2, CREATED);
-    const seen = usage(
-      [
-        [readLong, { lastRead: after(CREATED, DAY_MS) }],
-        [readLately, { lastRead: after(CREATED, 2 * DAY_MS) }],
-      ],
-      NOW,
-    );
+  test("puts a fact saved after another's last read ahead of it", () => {
+    const readOnce = fact(1);
+    const saved = fact(2, after(CREATED, 5 * DAY_MS));
+    const seen = usage([[readOnce, { lastRead: after(CREATED, DAY_MS) }]], NOW);
 
-    expect(titles(visibleIndex([readLong, readLately], seen))).toEqual(["Fact 2", "Fact 1"]);
+    expect(titles(visibleIndex([readOnce, saved], seen))).toEqual(["Fact 2", "Fact 1"]);
+  });
+
+  test("puts a fact read after another's update ahead of it", () => {
+    const updatedEarly = fact(1, after(CREATED, DAY_MS));
+    const readLater = fact(2);
+    const seen = usage([[readLater, { lastRead: after(CREATED, 2 * DAY_MS) }]], NOW);
+
+    expect(titles(visibleIndex([updatedEarly, readLater], seen))).toEqual(["Fact 2", "Fact 1"]);
+  });
+
+  test("keeps the given order for equal activity", () => {
+    expect(titles(visibleIndex([fact(2), fact(1)], usage([], NOW)))).toEqual(["Fact 2", "Fact 1"]);
   });
 
   test("leaves out memories of kinds the index does not list", () => {

@@ -33,12 +33,12 @@ describe("memory_forget", () => {
     );
   });
 
-  test("toasts the kind and title of the forgotten memory", async () => {
+  test("toasts the kind, scope and title of the forgotten memory", async () => {
     const fx = await withFact();
 
     await fx.host.callTool("memory_forget", { id: ID }, SESSION);
 
-    expect(fx.host.toasts).toContain("waymark · forgot fact · Staging resets nightly");
+    expect(fx.host.toasts).toContain("waymark · forgot fact · user · Staging resets nightly");
   });
 
   test("refuses an unknown id", async () => {

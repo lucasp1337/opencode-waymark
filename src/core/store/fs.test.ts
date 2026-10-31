@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, readdirSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { useTempDirs } from "../../../test/temp-dir";
-import { nodeFileSystem as fs } from "./fs";
+import { createFileSystem, nodeFileSystem as fs } from "./fs";
 
 const tempDir = useTempDirs();
 
@@ -22,10 +22,30 @@ describe("nodeFileSystem", () => {
     const dir = tempDir();
     const file = join(dir, "m.md");
     fs.writeAtomic(file, "kept");
-    mkdirSync(`${file}.tmp`);
+    const writer = createFileSystem(() => "7.A");
+    mkdirSync(`${file}.7.A.tmp`);
 
-    expect(() => fs.writeAtomic(file, "lost")).toThrow();
+    expect(() => writer.writeAtomic(file, "lost")).toThrow();
     expect(fs.readText(file)).toBe("kept");
+  });
+
+  test("writeAtomic names its temp file after the writer and leaves other writers' temp files alone", () => {
+    const dir = tempDir();
+    const file = join(dir, "m.md");
+    writeFileSync(`${file}.9.OTHER.tmp`, "half written");
+
+    createFileSystem(() => "7.A").writeAtomic(file, "mine");
+
+    expect(readdirSync(dir).sort()).toEqual(["m.md", "m.md.9.OTHER.tmp"]);
+    expect(fs.readText(`${file}.9.OTHER.tmp`)).toBe("half written");
+  });
+
+  test("createExclusive creates the file once and reports an existing one", () => {
+    const file = join(tempDir(), "a", "x.lock");
+
+    expect(fs.createExclusive(file, "first")).toBe(true);
+    expect(fs.createExclusive(file, "second")).toBe(false);
+    expect(fs.readText(file)).toBe("first");
   });
 
   test("readText and mtimeMs report a missing file as undefined", () => {

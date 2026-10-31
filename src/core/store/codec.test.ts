@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { memoryId } from "../../../test/memory-id";
-import { validContent } from "../../../test/valid-content";
-import { type Memory, type MemoryContent, newMemory } from "../model/memory";
+import { type ContentInput, validContent } from "../../../test/valid-content";
+import { type Memory, newMemory } from "../model/memory";
 import { err, ok } from "../model/result";
 import type { ScopeRef } from "../model/scope";
 import { decodeMemory, encodeMemory } from "./codec";
@@ -10,7 +10,7 @@ const ID = memoryId("01JB8Z6Q4R3M2N1P0V9W8X7Y6Z");
 const OLDER_ID = memoryId("01JB8Z6Q4R3M2N1P0V9W8X7Y60");
 const NOW = new Date("2026-01-02T03:04:05.000Z");
 
-function memoryOf(content: MemoryContent, scope: ScopeRef = { level: "user" }): Memory {
+function memoryOf(content: ContentInput, scope: ScopeRef = { level: "user" }): Memory {
   return newMemory(validContent(content), { id: ID, scope, now: NOW });
 }
 
@@ -155,7 +155,12 @@ describe("decodeMemory round trip", () => {
     ],
     [
       "a reference with its locator",
-      memoryOf({ kind: "reference", title: "Runbook", body: "https://wiki.example.com/runbook" }),
+      memoryOf({
+        kind: "reference",
+        title: "Runbook",
+        body: "Deploy steps",
+        locator: "https://wiki.example.com/runbook",
+      }),
     ],
     [
       "an org scope",
@@ -195,6 +200,29 @@ describe("decodeMemory round trip", () => {
 
   test.each(roundTrips)("restores %s exactly", (_case, memory) => {
     expect(decodeMemory(encodeMemory(memory))).toEqual(ok(memory));
+  });
+});
+
+describe("decodeMemory references", () => {
+  const reference = memoryOf({ kind: "reference", title: "Runbook", body: "x", locator: "PAY-1" });
+
+  test("writes the locator after the title", () => {
+    expect(encodeMemory(reference)).toContain("title: Runbook\nlocator: PAY-1\ncreated:");
+  });
+
+  test("reads a reference file from before locators existed, without a locator", () => {
+    const legacy = encodeMemory(reference).replace("locator: PAY-1\n", "");
+
+    const decoded = decodeMemory(legacy);
+
+    expect(decoded.ok && decoded.value.locator).toBeUndefined();
+    expect(decoded.ok && decoded.value.title).toBe("Runbook");
+  });
+
+  test("rejects a multi-line locator", () => {
+    const text = encodeMemory(reference).replace("locator: PAY-1", 'locator: "a\\nb"');
+
+    expect(errorOf(text)).toBe("locator must be a single line");
   });
 });
 

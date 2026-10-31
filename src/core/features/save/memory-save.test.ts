@@ -258,10 +258,42 @@ describe("memory_save kinds", () => {
       kind: "reference",
       scope: "org",
       title: "Deploy runbook",
+      body: "How to deploy",
+      locator: "https://wiki.example.com/deploy",
+    });
+
+    expect(reply).toBe(
+      "Saved [01JB8Z6Q4R3M2N1P0V9W8X0001] reference · org:github.com/acme · Deploy runbook → https://wiki.example.com/deploy",
+    );
+  });
+
+  test("a reference without a locator is not saved, even when the body has a URL", async () => {
+    const fx = fixture();
+
+    const reply = await save(fx, {
+      kind: "reference",
+      scope: "org",
+      title: "Deploy runbook",
       body: "https://wiki.example.com/deploy",
     });
 
-    expect(reply).toStartWith("Saved [01JB8Z6Q4R3M2N1P0V9W8X0001] reference · org:github.com/acme");
+    expect(reply).toBe(
+      "Not saved: reference needs a locator: where it points (URL, path, ticket key)",
+    );
+  });
+
+  test("a multi-line locator is not saved", async () => {
+    const fx = fixture();
+
+    const reply = await save(fx, {
+      kind: "reference",
+      scope: "org",
+      title: "Deploy runbook",
+      body: "x",
+      locator: "a\nb",
+    });
+
+    expect(reply).toBe("Not saved: locator must be a single line");
   });
 
   test("a session the host does not know turns into a tool message", async () => {

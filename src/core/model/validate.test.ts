@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { validContent } from "../../../test/valid-content";
+import { MAX_LOCATOR_LENGTH } from "./locator";
 import type { MemoryContent } from "./memory";
 import type { Result } from "./result";
-import { applyPatch, parseContent, parsePatch } from "./validate";
+import { applyPatch, parseContent, parsePatch, parseStoredContent } from "./validate";
 
 const fact = {
   kind: "fact",
@@ -11,7 +12,7 @@ const fact = {
 } as const;
 
 // Widens the branded result so plain object literals can be compared against it.
-function outcome(result: Result<MemoryContent, string[]>): MemoryContent | string[] {
+function outcome(result: Result<MemoryContent, string[]>): unknown {
   return result.ok ? result.value : result.error;
 }
 
@@ -58,16 +59,44 @@ describe("parseContent", () => {
     );
   });
 
-  test("requires a locator in the body of a reference", () => {
+  test("requires a locator on a reference", () => {
     expect(problems({ ...fact, kind: "reference" })).toEqual([
-      "reference needs a locator in the body (URL, path or ticket key)",
+      "reference needs a locator: where it points (URL, path, ticket key)",
     ]);
   });
 
-  test("accepts a reference whose body has a URL", () => {
+  test("accepts a reference with a locator and ignores what the body says", () => {
+    expect(outcome(parseContent({ ...fact, kind: "reference", locator: " PAY-12 " }))).toEqual({
+      ...fact,
+      kind: "reference",
+      locator: "PAY-12",
+    });
+  });
+
+  test("does not read a locator out of the body", () => {
     expect(
       problems({ ...fact, kind: "reference", body: "https://runbooks.example.com/x" }),
-    ).toEqual([]);
+    ).toEqual(["reference needs a locator: where it points (URL, path, ticket key)"]);
+  });
+
+  test.each([
+    ["empty", ""],
+    ["multi-line", "a\nb"],
+    ["too long", "x".repeat(MAX_LOCATOR_LENGTH + 1)],
+  ])("rejects a %s locator", (_case, locator) => {
+    expect(problems({ ...fact, kind: "reference", locator })).toHaveLength(1);
+  });
+
+  test("drops a locator given to a kind that does not use one", () => {
+    expect(outcome(parseContent({ ...fact, locator: "PAY-12" }))).toEqual(fact);
+  });
+
+  test("loads a stored reference without a locator but still enforces its other fields", () => {
+    const stored = parseStoredContent({ ...fact, kind: "reference" });
+    const strict = parseStoredContent({ ...fact, kind: "rule" });
+
+    expect(stored.ok).toBe(true);
+    expect(strict.ok).toBe(false);
   });
 
   test("rejects an unknown kind and names the valid ones", () => {
@@ -193,19 +222,38 @@ describe("parsePatch", () => {
 });
 
 describe("applyPatch", () => {
-  const reference = validContent({ kind: "reference", title: "Runbook", body: "See OPS-12" });
+  const reference = validContent({
+    kind: "reference",
+    title: "Runbook",
+    body: "See the ticket",
+    locator: "OPS-12",
+  });
 
   test("merges the patch into the content", () => {
     expect(outcome(applyPatch(reference, { title: "Deploy runbook" }))).toEqual({
       kind: "reference",
       title: "Deploy runbook",
-      body: "See OPS-12",
+      body: "See the ticket",
+      locator: "OPS-12",
     });
   });
 
-  test("re-checks the kind's requirements on the result", () => {
-    expect(outcome(applyPatch(reference, { body: "ask around" }))).toEqual([
-      "reference needs a locator in the body (URL, path or ticket key)",
+  test("changes the locator of a reference", () => {
+    const patch = parsePatch({ locator: "OPS-13" });
+
+    expect(patch.ok && outcome(applyPatch(reference, patch.value))).toMatchObject({
+      locator: "OPS-13",
+    });
+  });
+
+  test("asks a legacy reference without a locator to gain one when it is changed", () => {
+    const legacy = parseStoredContent({ kind: "reference", title: "Runbook", body: "OPS-12" });
+
+    expect(legacy.ok && outcome(applyPatch(legacy.value, { title: "Deploy runbook" }))).toEqual([
+      "reference needs a locator: where it points (URL, path, ticket key)",
     ]);
+
+    const fix = parsePatch({ title: "Deploy runbook", locator: "OPS-12" });
+    expect(legacy.ok && fix.ok && applyPatch(legacy.value, fix.value).ok).toBe(true);
   });
 });

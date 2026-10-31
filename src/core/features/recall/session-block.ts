@@ -14,7 +14,7 @@ interface BlockInput {
   readonly usage: IndexUsage;
 }
 
-function indexLine(memory: Memory): string {
+export function indexLine(memory: Memory): string {
   return `- [${memory.id}] ${memory.title}`;
 }
 

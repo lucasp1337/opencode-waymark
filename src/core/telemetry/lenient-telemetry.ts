@@ -23,3 +23,14 @@ export function lenientTelemetry(inner: Telemetry, log: HostPort["log"]): Teleme
     close: () => inner.close(),
   };
 }
+
+// Stands in when the counters cannot be opened at all: nothing is recorded, everything reads as
+// never seen.
+export const noTelemetry: Telemetry = {
+  recordRead: () => undefined,
+  recordSessions: () => undefined,
+  recordFire: () => undefined,
+  firesWithin: () => 0,
+  stats: () => new Map<MemoryId, MemoryStats>(),
+  close: () => undefined,
+};

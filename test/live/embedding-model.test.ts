@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { loadTransformersEmbedder } from "../../src/core/features/recall/embeddings/transformers-embedder";
 import { useTempDirs } from "../temp-dir";
+import { LIVE_MODEL_CACHE } from "./harness";
 
 const ENGLISH = "The deploy script must run from the repository root.";
 const SLOVAK_PARAPHRASE = "Skript na nasadenie sa musí spúšťať z koreňového adresára repozitára.";
@@ -16,7 +17,7 @@ function cosine(a: Float32Array, b: Float32Array): number {
 describe("embedding model", () => {
   // The first run downloads the model, so this needs network access and a generous timeout.
   test("a Slovak paraphrase is closer to its English original than an unrelated sentence is", async () => {
-    const embedder = await loadTransformersEmbedder(tempDir());
+    const embedder = await loadTransformersEmbedder(LIVE_MODEL_CACHE ?? tempDir());
     const [english, slovak, unrelated] = await embedder.embed([
       ENGLISH,
       SLOVAK_PARAPHRASE,

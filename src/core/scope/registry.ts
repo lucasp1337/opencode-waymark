@@ -2,6 +2,7 @@ import { ownField } from "../model/own-field";
 import { err, ok, type Result } from "../model/result";
 import type { FileSystem } from "../store/fs";
 import { type JsonObject, loadRegistry, objectField, writeRegistry } from "./registry-file";
+import { type LockTiming, systemLockTiming, withRegistryLock } from "./registry-lock";
 
 export interface OrgRef {
   readonly id: string;
@@ -56,25 +57,49 @@ export interface OrgEntry {
   readonly added: boolean;
 }
 
-// Registers an org on first sight and says which org its repos belong to. A registry that cannot
-// be understood is reported and left untouched. I/O errors from the FileSystem throw and are
-// caught at the caller's edge.
-export function resolveOrg(fs: FileSystem, file: string, org: OrgRef): Result<OrgEntry, string> {
+function knownEntry({ orgs, aliases }: Orgs, id: string): OrgEntry | undefined {
+  const absorbedBy = aliasOf(aliases, id);
+  if (absorbedBy !== undefined) {
+    return { id: absorbedBy, added: false };
+  }
+  return ownField(orgs, id) === undefined ? undefined : { id, added: false };
+}
+
+function register(fs: FileSystem, file: string, org: OrgRef): Result<OrgEntry, string> {
   const registry = loadRegistry(fs, file, parseOrgs);
   if (!registry.ok) {
     return registry;
   }
   const { document, parsed } = registry.value;
-  const { orgs, aliases } = parsed;
-  const absorbedBy = aliasOf(aliases, org.id);
-  if (absorbedBy !== undefined) {
-    return ok({ id: absorbedBy, added: false });
+  const known = knownEntry(parsed, org.id);
+  if (known !== undefined) {
+    return ok(known);
   }
-  if (ownField(orgs, org.id) !== undefined) {
-    return ok({ id: org.id, added: false });
-  }
-  writeRegistry(fs, file, { ...document, orgs: { ...orgs, [org.id]: { owner: org.owner } } });
+  writeRegistry(fs, file, {
+    ...document,
+    orgs: { ...parsed.orgs, [org.id]: { owner: org.owner } },
+  });
   return ok({ id: org.id, added: true });
+}
+
+// Registers an org on first sight and says which org its repos belong to. A registry that cannot
+// be understood is reported and left untouched. Known orgs are answered without the lock, since
+// every session start asks. I/O errors from the FileSystem throw and are caught at the caller's
+// edge.
+export async function resolveOrg(
+  fs: FileSystem,
+  file: string,
+  org: OrgRef,
+  timing: LockTiming = systemLockTiming,
+): Promise<Result<OrgEntry, string>> {
+  const registry = loadRegistry(fs, file, parseOrgs);
+  if (!registry.ok) {
+    return registry;
+  }
+  const known = knownEntry(registry.value.parsed, org.id);
+  return known === undefined
+    ? await withRegistryLock(fs, file, timing, () => register(fs, file, org))
+    : ok(known);
 }
 
 function knownOrgs(orgs: JsonObject): string {
@@ -115,18 +140,25 @@ export function checkMerge(fs: FileSystem, file: string, merge: OrgMerge): Resul
   return registry.ok ? mergeAllowed(registry.value.parsed, merge) : registry;
 }
 
-export function recordMerge(fs: FileSystem, file: string, merge: OrgMerge): Result<void, string> {
-  const registry = loadRegistry(fs, file, parseOrgs);
-  if (!registry.ok) {
-    return registry;
-  }
-  const allowed = mergeAllowed(registry.value.parsed, merge);
-  if (!allowed.ok) {
-    return allowed;
-  }
-  writeRegistry(fs, file, {
-    ...registry.value.document,
-    aliases: withMerge(registry.value.parsed.aliases, merge),
+export function recordMerge(
+  fs: FileSystem,
+  file: string,
+  merge: OrgMerge,
+  timing: LockTiming = systemLockTiming,
+): Promise<Result<void, string>> {
+  return withRegistryLock(fs, file, timing, () => {
+    const registry = loadRegistry(fs, file, parseOrgs);
+    if (!registry.ok) {
+      return registry;
+    }
+    const allowed = mergeAllowed(registry.value.parsed, merge);
+    if (!allowed.ok) {
+      return allowed;
+    }
+    writeRegistry(fs, file, {
+      ...registry.value.document,
+      aliases: withMerge(registry.value.parsed.aliases, merge),
+    });
+    return ok(undefined);
   });
-  return ok(undefined);
 }

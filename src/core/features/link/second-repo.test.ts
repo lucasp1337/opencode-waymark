@@ -200,7 +200,7 @@ describe("second repo hint", () => {
 describe("second repo hint and the registry", () => {
   test("a declined pair is never hinted, in any session", async () => {
     const registry = registryFile();
-    declinePair(nodeFileSystem, registry, [API, WEB]);
+    await declinePair(nodeFileSystem, registry, [API, WEB]);
     const { hints } = setup({ registry });
 
     expect(await touching(hints, ["/work/web/a.ts"])).toBeNull();
@@ -209,7 +209,7 @@ describe("second repo hint and the registry", () => {
 
   test("a linked pair adds nothing", async () => {
     const registry = registryFile();
-    linkRepos(nodeFileSystem, registry, { repos: [API, WEB], product: "payments" });
+    await linkRepos(nodeFileSystem, registry, { repos: [API, WEB], product: "payments" });
     const { hints } = setup({ registry });
 
     expect(await touching(hints, ["/work/web/a.ts"])).toBeNull();
@@ -217,8 +217,8 @@ describe("second repo hint and the registry", () => {
 
   test("repos in two different products add nothing", async () => {
     const registry = registryFile();
-    linkRepos(nodeFileSystem, registry, { repos: [API], product: "payments" });
-    linkRepos(nodeFileSystem, registry, { repos: [WEB], product: "storefront" });
+    await linkRepos(nodeFileSystem, registry, { repos: [API], product: "payments" });
+    await linkRepos(nodeFileSystem, registry, { repos: [WEB], product: "storefront" });
     const { hints } = setup({ registry });
 
     expect(await touching(hints, ["/work/web/a.ts"])).toBeNull();
@@ -229,7 +229,7 @@ describe("second repo hint and the registry", () => {
     ["the other repo", WEB],
   ])("when %s is in a product the hint says both are then in it", async (_, member) => {
     const registry = registryFile();
-    linkRepos(nodeFileSystem, registry, { repos: [member], product: "payments" });
+    await linkRepos(nodeFileSystem, registry, { repos: [member], product: "payments" });
     const { hints } = setup({ registry });
 
     const text = await touching(hints, ["/work/web/a.ts"]);
@@ -278,7 +278,10 @@ describe("second repo hint and the registry", () => {
       {
         level: "warn",
         msg: "product links not read",
-        data: { repo: WEB, error: `registry ${registry} is not valid JSON` },
+        data: {
+          repo: WEB,
+          error: expect.stringContaining(`registry ${registry} is not valid JSON (`),
+        },
       },
     ]);
   });

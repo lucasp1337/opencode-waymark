@@ -10,9 +10,11 @@ import { createReviewSignals } from "./features/lifecycle/review-signals";
 import { memoryLinkTool } from "./features/link/memory-link";
 import { createSecondRepoHints } from "./features/link/second-repo";
 import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
+import type { Baseline } from "./features/recall/fresh-memories";
 import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
 import { memorySearchTool } from "./features/recall/memory-search";
+import { createOwnWrites, type OwnWrites } from "./features/recall/own-writes";
 import { createRecallScopes, type RecallScope } from "./features/recall/recall-scope";
 import { createRetriever } from "./features/recall/retriever";
 import { createSessionBlocks } from "./features/recall/session-blocks";
@@ -27,13 +29,14 @@ import type { MemoryId } from "./model/id";
 import { parseOptions } from "./options";
 import type { HostPort } from "./port";
 import type { AsyncOriginUrl, Git } from "./scope/git";
+import { memoizeRegistryReads } from "./scope/memoized-registry";
 import { createSessionScopes, type SessionScopes } from "./scope/session-scopes";
 import type { SyncReport } from "./store/cache";
 import type { Embedder } from "./store/embedder";
 import type { FileSystem } from "./store/fs";
 import { type MemoryStore, openMemoryStore } from "./store/memory-store";
 import { openVectorIndex, type VectorIndex } from "./store/vector-index";
-import { lenientTelemetry } from "./telemetry/lenient-telemetry";
+import { lenientTelemetry, noTelemetry } from "./telemetry/lenient-telemetry";
 import { openTelemetry, type Telemetry } from "./telemetry/telemetry";
 
 export interface RuntimeDeps {
@@ -54,13 +57,21 @@ export interface Runtime {
 }
 
 function openCounters(host: HostPort, deps: RuntimeDeps): Telemetry {
-  const { telemetry, reset } = openTelemetry(join(deps.dataDir, "telemetry.sqlite"), deps.now, {
-    fireRetentionDays: DEFAULT_LIFECYCLE.noisy.days,
-  });
-  if (reset !== undefined) {
-    host.log("warn", "telemetry recreated", { reason: reset });
+  try {
+    const { telemetry, reset } = openTelemetry(join(deps.dataDir, "telemetry.sqlite"), deps.now, {
+      fireRetentionDays: DEFAULT_LIFECYCLE.noisy.days,
+    });
+    if (reset !== undefined) {
+      host.log("warn", "telemetry recreated", { reason: reset });
+    }
+    return lenientTelemetry(telemetry, host.log);
+  } catch (error) {
+    host.log("error", "telemetry unavailable; usage counters are off for this session", {
+      file: join(deps.dataDir, "telemetry.sqlite"),
+      error: String(error),
+    });
+    return noTelemetry;
   }
-  return lenientTelemetry(telemetry, host.log);
 }
 
 function logOpening(host: HostPort, report: SyncReport, cacheReset: string | undefined): void {
@@ -87,6 +98,9 @@ interface Wiring extends Resources {
   readonly config: ConfigStore;
   readonly scopes: SessionScopes;
   readonly registryFile: string;
+  // Every registry read and write goes through this, so a write drops what reads remembered.
+  readonly registryFs: FileSystem;
+  readonly ownWrites: OwnWrites;
 }
 
 function toolDepsOf(wiring: Wiring): ToolDeps {
@@ -104,7 +118,7 @@ function toolDepsOf(wiring: Wiring): ToolDeps {
 }
 
 function commandToolDeps(wiring: Wiring, toolDeps: ToolDeps): MemoryCommandDeps {
-  const { deps, store, counters, config, registryFile } = wiring;
+  const { deps, store, counters, config, registryFile, registryFs } = wiring;
   const reviewSignals = createReviewSignals({
     store,
     counters,
@@ -112,11 +126,11 @@ function commandToolDeps(wiring: Wiring, toolDeps: ToolDeps): MemoryCommandDeps 
     indexExit: () => config.current().indexExit,
     noisy: DEFAULT_LIFECYCLE.noisy,
   });
-  return { ...toolDeps, fs: deps.fs, registryFile, reviewSignals };
+  return { ...toolDeps, fs: registryFs, registryFile, reviewSignals };
 }
 
 function registerTools(wiring: Wiring): void {
-  const { host, deps, store, counters, config, registryFile } = wiring;
+  const { host, store, counters, config, registryFile, registryFs, ownWrites } = wiring;
   const toolDeps = toolDepsOf(wiring);
   const tools = [
     memorySaveTool(toolDeps),
@@ -126,10 +140,10 @@ function registerTools(wiring: Wiring): void {
     memoryForgetTool(toolDeps),
     memoryConfigTool({ config }),
     memoryCommandTool(commandToolDeps(wiring, toolDeps)),
-    memoryLinkTool({ fs: deps.fs, registryFile }),
+    memoryLinkTool({ fs: registryFs, registryFile }),
   ];
   for (const tool of tools) {
-    host.registerTool(guardedTool(host, tool));
+    host.registerTool(guardedTool(host, ownWrites.attributeTool(tool)));
   }
 }
 
@@ -154,7 +168,7 @@ function subagentsOf({ host, deps, config }: Wiring): () => readonly string[] {
   return () => [...options.subagents, ...config.current().subagents];
 }
 
-function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf): Forgetter {
+function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf) {
   const { host, deps, store, counters, config } = wiring;
   const blocks = createSessionBlocks({
     store,
@@ -176,8 +190,21 @@ function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf): Forg
   return blocks;
 }
 
-function registerJit({ host, store, counters }: Wiring, recallScope: RecallScopeOf): Forgetter {
-  const jit = createJit({ recallScope, store, counters, noisy: DEFAULT_LIFECYCLE.noisy });
+function registerJit(
+  { host, store, counters, scopes, ownWrites }: Wiring,
+  recallScope: RecallScopeOf,
+  baseline: (sessionID: string) => Baseline | undefined,
+): Forgetter {
+  const jit = createJit({
+    recallScope,
+    store,
+    counters,
+    noisy: DEFAULT_LIFECYCLE.noisy,
+    currentChain: (sessionID) => scopes.chainFor(sessionID),
+    baseline,
+    ownWrites,
+    log: host.log,
+  });
   host.onUserMessage((sessionID, text) => jit.onUserMessage(sessionID, text));
   host.onToolAfter((call) => jit.onToolAfter(call));
   return jit;
@@ -185,13 +212,13 @@ function registerJit({ host, store, counters }: Wiring, recallScope: RecallScope
 
 // Sessions without recall are not asked about products either.
 function registerSecondRepoHints(
-  { host, deps, registryFile }: Wiring,
+  { host, deps, registryFile, registryFs }: Wiring,
   recallScope: RecallScopeOf,
 ): Forgetter {
   const hints = createSecondRepoHints({
     recallScope,
     originUrl: deps.originUrl,
-    fs: deps.fs,
+    fs: registryFs,
     registryFile,
     log: host.log,
   });
@@ -212,12 +239,18 @@ function registerRecall(wiring: Wiring): void {
   const { host, scopes } = wiring;
   const recall = createRecallScopes({ host, scopes, subagents: subagentsOf(wiring) });
   const recallScope = (sessionID: string) => recall.recallScope(sessionID);
-  const forgetters: Forgetter[] = [recall];
-  if (host.capabilities.systemInjection) {
-    forgetters.push(registerSessionBlocks(wiring, recallScope));
+  const forgetters: Forgetter[] = [recall, wiring.ownWrites];
+  const blocks = host.capabilities.systemInjection
+    ? registerSessionBlocks(wiring, recallScope)
+    : undefined;
+  if (blocks !== undefined) {
+    forgetters.push(blocks);
   }
   if (host.capabilities.toolOutputMutation) {
-    forgetters.push(registerJit(wiring, recallScope), registerSecondRepoHints(wiring, recallScope));
+    forgetters.push(
+      registerJit(wiring, recallScope, (sessionID) => blocks?.baselineOf(sessionID)),
+      registerSecondRepoHints(wiring, recallScope),
+    );
   }
   if (host.capabilities.compactionHook) {
     registerCompaction(wiring, recallScope);
@@ -237,8 +270,21 @@ function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void 
   const config = openConfigStore(deps.fs, join(deps.dataDir, "config.jsonc"), rawHost.log);
   const host = withToastSetting(rawHost, () => config.current().toasts);
   const registryFile = join(deps.dataDir, "registry.json");
-  const scopes = createSessionScopes({ host, git: deps.git, fs: deps.fs, registryFile });
-  const wiring = { host, deps, ...resources, config, scopes, registryFile };
+  const registryFs = memoizeRegistryReads(deps.fs, registryFile);
+  const scopes = createSessionScopes({ host, git: deps.git, fs: registryFs, registryFile });
+  const ownWrites = createOwnWrites();
+  const store = ownWrites.attributeStore(resources.store);
+  const wiring = {
+    host,
+    deps,
+    ...resources,
+    store,
+    config,
+    scopes,
+    registryFile,
+    registryFs,
+    ownWrites,
+  };
   registerTools(wiring);
   registerCommands(host);
   registerRecall(wiring);

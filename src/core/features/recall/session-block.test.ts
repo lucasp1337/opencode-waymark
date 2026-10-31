@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { memoryId } from "../../../../test/memory-id";
-import { validContent } from "../../../../test/valid-content";
-import { type Memory, type MemoryContent, newMemory } from "../../model/memory";
+import { type ContentInput, validContent } from "../../../../test/valid-content";
+import { type Memory, newMemory } from "../../model/memory";
 import type { ScopeChain, ScopeRef } from "../../model/scope";
 import type { IndexUsage } from "../lifecycle/index-exit";
 import { INSTRUCTIONS } from "./instructions";
@@ -17,7 +17,7 @@ interface Fixture {
   readonly updated?: string;
 }
 
-function memory(content: MemoryContent, { n, scope, updated }: Fixture): Memory {
+function memory(content: ContentInput, { n, scope, updated }: Fixture): Memory {
   return newMemory(validContent(content), {
     id: memoryId(`01JB8Z6Q4R3M2N1P0V9W8X${String(n).padStart(4, "0")}`),
     scope,
@@ -162,7 +162,7 @@ describe("renderSessionBlock", () => {
         { n: 11, scope: USER },
       ),
       memory(
-        { kind: "reference", title: "Runbook", body: "https://x.example/r" },
+        { kind: "reference", title: "Runbook", body: "b", locator: "https://x.example/r" },
         { n: 8, scope: USER },
       ),
     ]);

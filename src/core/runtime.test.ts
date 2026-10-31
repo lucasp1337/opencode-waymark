@@ -114,6 +114,24 @@ describe("createRuntime", () => {
     expect(next.host.logs.map((entry) => entry.msg)).toContain("telemetry recreated");
   });
 
+  test("an unopenable telemetry file is logged once and recall still works", async () => {
+    const fx = runtime();
+    seedFact(fx.dataDir);
+    fx.runtime.dispose();
+    for (const suffix of ["", "-wal", "-shm"]) {
+      rmSync(join(fx.dataDir, `telemetry.sqlite${suffix}`), { force: true });
+    }
+    mkdirSync(join(fx.dataDir, "telemetry.sqlite"));
+
+    const next = fx.restart();
+
+    expect(
+      next.host.logs.filter((entry) => entry.msg.startsWith("telemetry unavailable")),
+    ).toHaveLength(1);
+    expect(next.host.logs.map((entry) => entry.msg)).not.toContain("activation failed");
+    expect(await next.host.callTool("memory_read", { id: ID }, SESSION)).toContain("Seeded");
+  });
+
   test("an invalid memory file is skipped and logged", () => {
     const fx = runtime();
     mkdirSync(join(fx.dataDir, "user", "fact"), { recursive: true });

@@ -285,7 +285,10 @@ describe("an org merge interrupted after the memories moved", () => {
     expect(fx.host.logs).toContainEqual({
       level: "warn",
       msg: "org merge not recorded",
-      data: { ...merge, error: `registry ${fx.registryFile} is not valid JSON` },
+      data: {
+        ...merge,
+        error: expect.stringContaining(`registry ${fx.registryFile} is not valid JSON (`),
+      },
     });
   });
 

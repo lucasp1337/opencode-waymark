@@ -1,5 +1,6 @@
 import type { MemoryId } from "./id";
 import type { Kind } from "./kind";
+import type { Locator } from "./locator";
 import type { ScopeRef } from "./scope";
 
 export const TRIGGER_FIELDS = ["paths", "commands", "tools", "keywords"] as const;
@@ -17,6 +18,8 @@ export interface MemoryContent {
   readonly body: string;
   readonly why?: string;
   readonly triggers?: Triggers;
+  // Only references carry one. Files from before locators existed may lack it.
+  readonly locator?: Locator;
 }
 
 declare const validContent: unique symbol;

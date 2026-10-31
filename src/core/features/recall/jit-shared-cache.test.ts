@@ -8,6 +8,7 @@ import type { ScopeRef } from "../../model/scope";
 import type { ToolCallInfo } from "../../port";
 import { nodeFileSystem } from "../../store/fs";
 import { type MemoryStore, openMemoryStore } from "../../store/memory-store";
+import type { Baseline } from "./fresh-memories";
 import { createJit } from "./jit";
 
 const USER: ScopeRef = { level: "user" };
@@ -38,16 +39,28 @@ function gotcha(n: number): Memory {
   );
 }
 
+function preference(): Memory {
+  return newMemory(validContent({ kind: "preference", title: "Short answers", body: "" }), {
+    id: memoryId("01JB8Z6Q4R3M2N1P0V9W8X0009"),
+    scope: USER,
+    now: new Date(0),
+  });
+}
+
 function bashCall(sessionID: string): ToolCallInfo {
   return { sessionID, tool: "bash", args: {}, touchedPaths: [], appendable: true };
 }
 
-function jitOver(store: MemoryStore) {
+function jitOver(store: MemoryStore, baseline?: Baseline) {
   return createJit({
     store,
     counters: { recordFire: () => undefined, firesWithin: () => 0 },
     noisy: { fires: 10, days: 30 },
     recallScope: () => Promise.resolve({ chain: [USER], directory: "/work" }),
+    currentChain: () => Promise.resolve([USER]),
+    baseline: () => baseline,
+    ownWrites: { isOwn: () => false },
+    log: () => undefined,
   });
 }
 
@@ -73,6 +86,17 @@ describe("JIT with several plugin instances on one data directory", () => {
     other.forget(gotcha(1));
 
     expect(await jit.onToolAfter(bashCall("s2"))).toBeNull();
+  });
+});
+
+describe("fresh memories with several plugin instances on one data directory", () => {
+  test("delivers a preference another instance saved after the session block was frozen", async () => {
+    const root = tempRoot();
+    const jit = jitOver(openStore(root), new Map());
+
+    openStore(root).save(preference());
+
+    expect(await jit.onToolAfter(bashCall("s1"))).toContain("Short answers");
   });
 });
 

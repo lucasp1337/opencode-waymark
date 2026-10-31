@@ -1,4 +1,5 @@
 import { type Delivery, KIND_DELIVERY, KINDS, kindsRequiring } from "../model/kind";
+import { MAX_LOCATOR_LENGTH } from "../model/locator";
 import { TRIGGER_FIELDS } from "../model/memory";
 import { SCOPE_LEVELS } from "../model/scope";
 
@@ -33,7 +34,11 @@ export const CONTENT_PROPERTIES = {
   title: { type: "string", description: "One line" },
   body: {
     type: "string",
-    description: `Markdown. For ${kindsNeeding("locator")}: include its URL, path or ticket key`,
+    description: "Markdown",
+  },
+  locator: {
+    type: "string",
+    description: `Required for ${kindsNeeding("locator")}, ignored for other kinds: where it points (URL, path, ticket key). One line, at most ${MAX_LOCATOR_LENGTH} characters`,
   },
   why: {
     type: "string",

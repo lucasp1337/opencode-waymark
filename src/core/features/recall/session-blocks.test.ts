@@ -243,3 +243,54 @@ describe("createSessionBlocks settings", () => {
     expect(after).not.toContain("Second fact");
   });
 });
+
+describe("createSessionBlocks with a full index", () => {
+  test("shows a freshly saved fact ahead of an old fact that was read once", async () => {
+    const old = fact("01JB8Z6Q4R3M2N1P0V9W8X0001", "Old fact");
+    const saved = {
+      ...fact("01JB8Z6Q4R3M2N1P0V9W8X0002", "Saved fact"),
+      updated: "2026-05-30T00:00:00.000Z",
+    };
+    const { counters } = fakeCounters(
+      new Map([[old.id, { ...UNSEEN, lastRead: new Date("2026-01-02T00:00:00.000Z") }]]),
+    );
+    const blocks = createSessionBlocks({
+      store: { inScopes: () => [old, saved] },
+      recallScope: () => Promise.resolve({ chain: CHAIN, directory: "/d" }),
+      indexLines: () => 1,
+      indexExit: () => ({ sessions: 20, days: 30 }),
+      counters,
+      now: () => NOW,
+      log: () => undefined,
+    });
+
+    const block = await blocks.blockFor("s");
+
+    expect(block).toContain("Saved fact");
+    expect(block).not.toContain("Old fact");
+  });
+});
+
+describe("createSessionBlocks baseline", () => {
+  const FIRST = "01JB8Z6Q4R3M2N1P0V9W8X0001";
+
+  test("has none before the block is rendered", () => {
+    expect(blocksOver([]).baselineOf("s")).toBeUndefined();
+  });
+
+  test("holds the stamp of each always-on and indexed memory the block was rendered from", async () => {
+    const blocks = blocksOver([rule(FIRST, "A rule")]);
+    await blocks.blockFor("s");
+
+    expect(blocks.baselineOf("s")).toEqual(new Map([[memoryId(FIRST), new Date(0).toISOString()]]));
+  });
+
+  test("is dropped with the session", async () => {
+    const blocks = blocksOver([]);
+    await blocks.blockFor("s");
+
+    blocks.forget("s");
+
+    expect(blocks.baselineOf("s")).toBeUndefined();
+  });
+});

@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { memoryId } from "../../../../test/memory-id";
-import { validContent } from "../../../../test/valid-content";
+import { type ContentInput, validContent } from "../../../../test/valid-content";
 import type { MemoryId } from "../../model/id";
-import { type Memory, type MemoryContent, newMemory, type Triggers } from "../../model/memory";
+import { type Memory, newMemory, type Triggers } from "../../model/memory";
 import { type ScopeChain, type ScopeRef, scopeKey } from "../../model/scope";
 import type { ToolCallInfo } from "../../port";
 import type { Telemetry } from "../../telemetry/telemetry";
 import type { NoisyThresholds } from "../lifecycle/lifecycle-settings";
+import { type Baseline, baselineOf } from "./fresh-memories";
 import { createJit } from "./jit";
 import type { RecallScope } from "./recall-scope";
 
@@ -22,7 +23,7 @@ function id(n: number): MemoryId {
 
 function stored(
   n: number,
-  content: MemoryContent,
+  content: ContentInput,
   options: { scope?: ScopeRef; supersedes?: MemoryId } = {},
 ): Memory {
   return newMemory(validContent(content), {
@@ -63,11 +64,19 @@ function fakeCounters(firesBefore = 0) {
 
 interface Setup {
   scope?: RecallScope | null;
+  // The chain now, when a product link changed it after the session started.
+  chain?: ScopeChain;
+  currentChain?: () => Promise<ScopeChain>;
+  // The frozen block's baseline; none means the session has no block.
+  baseline?: Baseline;
   firesBefore?: number;
+  // Memories the session wrote itself.
+  isOwn?: (sessionID: string, memory: Memory) => boolean;
 }
 
 function jitWith(memories: readonly Memory[], setup: Setup = {}) {
   const reads = { count: 0 };
+  const logged: string[] = [];
   const store = { generation: 0 };
   const scope = setup.scope === undefined ? SESSION_SCOPE : setup.scope;
   const { counters, fired, asked } = fakeCounters(setup.firesBefore);
@@ -75,6 +84,12 @@ function jitWith(memories: readonly Memory[], setup: Setup = {}) {
     counters,
     noisy: NOISY,
     recallScope: () => Promise.resolve(scope),
+    currentChain: setup.currentChain ?? (() => Promise.resolve(setup.chain ?? SESSION_SCOPE.chain)),
+    log: (_level, msg) => {
+      logged.push(msg);
+    },
+    baseline: () => setup.baseline,
+    ownWrites: { isOwn: setup.isOwn ?? (() => false) },
     store: {
       inScopes: (chain) => {
         reads.count += 1;
@@ -83,7 +98,7 @@ function jitWith(memories: readonly Memory[], setup: Setup = {}) {
       generation: () => store.generation,
     },
   });
-  return { jit, reads, store, fired, asked };
+  return { jit, reads, store, fired, asked, logged };
 }
 
 interface CallSpec {
@@ -231,11 +246,14 @@ describe("JIT candidates", () => {
   });
 
   const triggers: Triggers = { tools: ["bash"] };
-  const notDelivered: [string, MemoryContent][] = [
+  const notDelivered: [string, ContentInput][] = [
     ["rule", { kind: "rule", title: "T", body: "B", why: "W", triggers }],
     ["preference", { kind: "preference", title: "T", body: "B", triggers }],
     ["decision", { kind: "decision", title: "T", body: "B", why: "W", triggers }],
-    ["reference", { kind: "reference", title: "T", body: "https://example.test/doc", triggers }],
+    [
+      "reference",
+      { kind: "reference", title: "T", body: "B", locator: "https://example.test/doc", triggers },
+    ],
   ];
 
   test.each(notDelivered)(
@@ -277,6 +295,42 @@ describe("JIT candidates", () => {
     const { jit } = jitWith([inRepo]);
 
     expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).not.toBeNull();
+  });
+
+  test("a session forgotten while its chain is being read gets no state back", async () => {
+    let release: () => void = () => undefined;
+    let chainRequested: () => void = () => undefined;
+    const requested = new Promise<void>((resolve) => {
+      chainRequested = resolve;
+    });
+    const frozen = jitWith([ON_BASH], {
+      baseline: baselineOf([]),
+      currentChain: () =>
+        new Promise((resolve) => {
+          release = () => resolve(SESSION_SCOPE.chain);
+          chainRequested();
+        }),
+    });
+    const pending = frozen.jit.onToolAfter(toolCall({ tool: "bash" }));
+    await requested;
+
+    frozen.jit.forget("s1");
+    release();
+
+    expect(await pending).toBeNull();
+    expect(frozen.fired).toEqual([]);
+  });
+});
+
+describe("JIT with an unreadable current chain", () => {
+  test("still delivers trigger matches and logs the failure instead of throwing", async () => {
+    const { jit, logged } = jitWith([ON_BASH], {
+      baseline: baselineOf([]),
+      currentChain: () => Promise.reject(new Error("registry unreadable")),
+    });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "bash" }))).toContain("Pushes are protected");
+    expect(logged).toEqual(["current scope chain unavailable for recall"]);
   });
 });
 
@@ -362,9 +416,13 @@ describe("JIT for a session that gets no recall", () => {
     let scope: RecallScope | null = null;
     const jit = createJit({
       recallScope: () => Promise.resolve(scope),
+      currentChain: () => Promise.resolve(SESSION_SCOPE.chain),
+      baseline: () => undefined,
+      ownWrites: { isOwn: () => false },
       store: { inScopes: (chain) => onChain([ON_BASH], chain), generation: () => 0 },
       counters: fakeCounters().counters,
       noisy: NOISY,
+      log: () => undefined,
     });
     await jit.onToolAfter(toolCall({ tool: "bash", appendable: false }));
     scope = SESSION_SCOPE;
@@ -541,5 +599,186 @@ describe("JIT noisy gotcha check", () => {
     await jit.onToolAfter(toolCall({ tool: "bash" }));
 
     expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toContain(noisyLine(50, id(2)));
+  });
+});
+
+describe("JIT memories saved after the session block was frozen", () => {
+  const PRODUCT: ScopeRef = { level: "product", id: "shop" };
+  const BEFORE = [
+    stored(10, { kind: "rule", title: "Use UTC", body: "", why: "Logs." }),
+    stored(11, { kind: "fact", title: "Staging resets nightly", body: "Reset at 02:00." }),
+  ];
+
+  function frozenWith(memories: Memory[], setup: Setup = {}) {
+    return jitWith(memories, { baseline: baselineOf(BEFORE), ...setup });
+  }
+
+  function saveMidSession(fx: ReturnType<typeof jitWith>, memories: Memory[], saved: Memory) {
+    memories.push(saved);
+    fx.store.generation += 1;
+  }
+
+  test("delivers a rule saved mid-session with the next tool output, once", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+    const rule = stored(12, { kind: "rule", title: "No force push", body: "", why: "History." });
+
+    saveMidSession(fx, memories, rule);
+    const first = await fx.jit.onToolAfter(toolCall());
+
+    expect(first).toBe("waymark · new rule · No force push\n- No force push\n  Why: History.");
+    expect(await fx.jit.onToolAfter(toolCall())).toBeNull();
+  });
+
+  test("delivers a fact as an index line", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+
+    saveMidSession(fx, memories, stored(12, { kind: "fact", title: "Cache is Redis", body: "b" }));
+
+    expect(await fx.jit.onToolAfter(toolCall())).toBe(
+      `waymark · new fact (memory_read for the full text)\n- [${id(12)}] Cache is Redis`,
+    );
+  });
+
+  test("does not repeat what the frozen block already holds", async () => {
+    const fx = frozenWith([...BEFORE]);
+
+    expect(await fx.jit.onToolAfter(toolCall())).toBeNull();
+  });
+
+  test("delivers an edited memory again under its new stamp", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+
+    memories[0] = {
+      ...stored(10, { kind: "rule", title: "Use UTC", body: "", why: "New." }),
+      updated: "2026-03-02T00:00:00.000Z",
+    };
+    fx.store.generation += 1;
+
+    expect(await fx.jit.onToolAfter(toolCall())).toContain("Why: New.");
+    expect(await fx.jit.onToolAfter(toolCall())).toBeNull();
+  });
+
+  test("delivers a memory another process saved into the shared store", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+    await fx.jit.onToolAfter(toolCall());
+
+    saveMidSession(
+      fx,
+      memories,
+      stored(12, { kind: "preference", title: "Short answers", body: "" }),
+    );
+
+    expect(await fx.jit.onToolAfter(toolCall({ session: "s1" }))).toContain("Short answers");
+  });
+
+  test("delivers the memories of a product linked mid-session", async () => {
+    const memories = [
+      ...BEFORE,
+      stored(
+        20,
+        { kind: "rule", title: "Shop money is in cents", body: "", why: "Rounding." },
+        { scope: PRODUCT },
+      ),
+    ];
+    const fx = frozenWith(memories, { chain: [USER, PRODUCT, REPO] });
+
+    expect(await fx.jit.onToolAfter(toolCall())).toContain("Shop money is in cents");
+  });
+
+  test("leaves a memory out of a scope the session is not in", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+
+    saveMidSession(
+      fx,
+      memories,
+      stored(12, { kind: "rule", title: "Elsewhere", body: "", why: "w" }, { scope: OTHER_REPO }),
+    );
+
+    expect(await fx.jit.onToolAfter(toolCall())).toBeNull();
+  });
+
+  test("waits for an output that can carry text", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+    saveMidSession(
+      fx,
+      memories,
+      stored(12, { kind: "preference", title: "Short answers", body: "" }),
+    );
+
+    expect(await fx.jit.onToolAfter(toolCall({ appendable: false }))).toBeNull();
+    expect(await fx.jit.onToolAfter(toolCall())).toContain("Short answers");
+  });
+
+  test("delivers once per session, to each session", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+    saveMidSession(
+      fx,
+      memories,
+      stored(12, { kind: "preference", title: "Short answers", body: "" }),
+    );
+
+    await fx.jit.onToolAfter(toolCall({ session: "s1" }));
+
+    expect(await fx.jit.onToolAfter(toolCall({ session: "s2" }))).toContain("Short answers");
+  });
+
+  test("does not deliver a memory the session itself saved", async () => {
+    const memories = [...BEFORE];
+    const rule = stored(12, { kind: "rule", title: "No force push", body: "", why: "History." });
+    const fx = frozenWith(memories, { isOwn: (sessionID) => sessionID === "s1" });
+    saveMidSession(fx, memories, rule);
+
+    expect(await fx.jit.onToolAfter(toolCall({ session: "s1" }))).toBeNull();
+  });
+
+  test("delivers a memory saved by one session to another session", async () => {
+    const memories = [...BEFORE];
+    const rule = stored(12, { kind: "rule", title: "No force push", body: "", why: "History." });
+    const fx = frozenWith(memories, { isOwn: (sessionID) => sessionID === "s1" });
+    saveMidSession(fx, memories, rule);
+
+    expect(await fx.jit.onToolAfter(toolCall({ session: "s2" }))).toContain("No force push");
+  });
+
+  test("does not count a fresh memory as a trigger fire", async () => {
+    const memories = [...BEFORE];
+    const fx = frozenWith(memories);
+    saveMidSession(
+      fx,
+      memories,
+      stored(12, { kind: "preference", title: "Short answers", body: "" }),
+    );
+
+    await fx.jit.onToolAfter(toolCall());
+
+    expect(fx.fired).toEqual([]);
+  });
+
+  test("delivers nothing in a session without a frozen block", async () => {
+    const fx = jitWith([...BEFORE]);
+
+    expect(await fx.jit.onToolAfter(toolCall())).toBeNull();
+  });
+
+  test("joins a fresh memory to a matched gotcha in one output", async () => {
+    const memories = [...BEFORE, ON_BASH];
+    const fx = frozenWith(memories, { baseline: baselineOf(BEFORE) });
+    saveMidSession(
+      fx,
+      memories,
+      stored(12, { kind: "preference", title: "Short answers", body: "" }),
+    );
+
+    const text = await fx.jit.onToolAfter(toolCall({ tool: "bash" }));
+
+    expect(text).toContain("Pushes are protected");
+    expect(text).toContain("Short answers");
   });
 });

@@ -86,8 +86,8 @@ describe("Waymark's tool schemas", () => {
     );
 
     expect(shapes.map((shape) => Object.keys(shape))).toEqual([
-      ["kind", "scope", "title", "body", "why", "triggers", "relation"],
-      ["id", "title", "body", "why", "triggers"],
+      ["kind", "scope", "title", "body", "locator", "why", "triggers", "relation"],
+      ["id", "title", "body", "locator", "why", "triggers"],
       ["id"],
       ["query", "kinds", "scopes"],
       ["id"],

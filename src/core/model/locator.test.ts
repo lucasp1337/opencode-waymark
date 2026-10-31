@@ -1,29 +1,41 @@
 import { describe, expect, test } from "bun:test";
-import { hasLocator } from "./locator";
+import { MAX_LOCATOR_LENGTH, parseLocator } from "./locator";
+import type { Result } from "./result";
 
-describe("hasLocator", () => {
+// Widens the branded value so plain strings can be compared against it.
+function outcome(result: Result<string, string>): Result<string, string> {
+  return result;
+}
+
+describe("parseLocator", () => {
   test.each([
-    ["a URL", "Runbook: https://wiki.example.com/deploy"],
-    ["an absolute path", "Logs go to /var/log/app.log"],
-    ["a home-relative path", "Edit ~/.config/tool"],
-    ["a relative path naming a file, in backticks", "See `docs/release.md` first."],
-    ["a directory path", "Everything under src/core/ is pure"],
-    ["a Windows path", "Config lives in C:\\tools\\app.ini"],
-    ["a ticket key in parentheses", "Tracked in (PAY-1234)."],
+    ["a URL", "https://wiki.example.com/deploy"],
+    ["a path", "docs/release.md"],
+    ["a ticket key", "PAY-1234"],
+    ["any other text, uninterpreted", "the red binder"],
   ])("accepts %s", (_case, text) => {
-    expect(hasLocator(text)).toBe(true);
+    expect(outcome(parseLocator(text))).toEqual({ ok: true, value: text });
+  });
+
+  test("trims surrounding whitespace", () => {
+    expect(outcome(parseLocator("  PAY-1  "))).toEqual({ ok: true, value: "PAY-1" });
   });
 
   test.each([
-    ["plain prose", "Ask the platform team before changing it"],
-    ["a lone slash", "either / or"],
-    ["slash-joined words", "choose and/or, TCP/IP, 24/7"],
-    ["a lowercase key-like token", "see pay-12"],
-  ])("rejects %s", (_case, text) => {
-    expect(hasLocator(text)).toBe(false);
+    ["empty", "", "locator must be a non-empty string"],
+    ["blank", "   ", "locator must be a non-empty string"],
+    ["not a string", 7, "locator must be a non-empty string"],
+    ["multi-line", "a\nb", "locator must be a single line"],
+    [
+      "too long",
+      "x".repeat(MAX_LOCATOR_LENGTH + 1),
+      `locator must be at most ${MAX_LOCATOR_LENGTH} characters`,
+    ],
+  ])("rejects a locator that is %s", (_case, value, problem) => {
+    expect(outcome(parseLocator(value))).toEqual({ ok: false, error: problem });
   });
 
-  test("accepts ticket-shaped tokens such as UTF-8, a known structural false positive", () => {
-    expect(hasLocator("Use UTF-8 everywhere")).toBe(true);
+  test("accepts a locator of exactly the maximum length", () => {
+    expect(parseLocator("x".repeat(MAX_LOCATOR_LENGTH)).ok).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { liveEnvWithProbe, probeLines } from "./harness";
+import { liveEnvWithProbe, liveModelRef, probeLines } from "./harness";
 
 describe("onCompaction", () => {
   test("handler runs when a session is compacted and the request succeeds", async () => {
@@ -12,7 +12,7 @@ describe("onCompaction", () => {
       const response = await server.api(`/session/${sessionID}/summarize`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ providerID: "opencode", modelID: "big-pickle" }),
+        body: JSON.stringify(liveModelRef()),
       });
 
       expect(response.ok).toBe(true);
@@ -32,7 +32,7 @@ describe("onCompaction", () => {
       await server.api(`/session/${sessionID}/summarize`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ providerID: "opencode", modelID: "big-pickle" }),
+        body: JSON.stringify(liveModelRef()),
       });
 
       const messages = await (await server.api(`/session/${sessionID}/message`)).text();

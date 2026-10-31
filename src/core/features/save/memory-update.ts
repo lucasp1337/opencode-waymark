@@ -13,7 +13,7 @@ async function update(deps: ToolDeps, input: unknown): Promise<string> {
   }
   const patch = parsePatch(input);
   if (patch.ok && Object.keys(patch.value).length === 0) {
-    return "Not updated: give at least one of title, body, why or triggers.";
+    return "Not updated: give at least one of title, body, why, triggers or locator.";
   }
   const content = patch.ok ? applyPatch(existing.value, patch.value) : patch;
   if (!content.ok) {

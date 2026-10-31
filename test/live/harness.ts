@@ -2,7 +2,24 @@ import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-export const LIVE_MODEL = "opencode/big-pickle";
+export const LIVE_MODEL = process.env.WAYMARK_LIVE_MODEL ?? "opencode/big-pickle";
+
+export interface ModelRef {
+  providerID: string;
+  modelID: string;
+}
+
+// Model ids may themselves contain "/", so only the first one separates provider from model.
+export function liveModelRef(): ModelRef {
+  const split = LIVE_MODEL.indexOf("/");
+  if (split <= 0 || split === LIVE_MODEL.length - 1) {
+    throw new Error(`WAYMARK_LIVE_MODEL must look like provider/model, got "${LIVE_MODEL}"`);
+  }
+  return { providerID: LIVE_MODEL.slice(0, split), modelID: LIVE_MODEL.slice(split + 1) };
+}
+
+// Optional directory holding an already downloaded embedding model, shared across runs.
+export const LIVE_MODEL_CACHE = process.env.WAYMARK_LIVE_MODEL_CACHE;
 
 const REPO_ROOT = resolve(import.meta.dir, "..", "..");
 // opencode run wraps any argv entry containing a space in quotes, so the prompt goes in word by word.
@@ -96,6 +113,10 @@ export function createLiveEnv(): LiveEnv {
     mkdirSync(dir, { recursive: true });
   }
   mkdirSync(join(dirs.config, "plugin"));
+  if (LIVE_MODEL_CACHE !== undefined) {
+    mkdirSync(join(dirs.data, "waymark"), { recursive: true });
+    symlinkSync(resolve(LIVE_MODEL_CACHE), join(dirs.data, "waymark", "models"));
+  }
   const logFile = join(dirs.state, "waymark", "waymark.log");
   const sandboxEnv = {
     ...process.env,
@@ -235,9 +256,8 @@ async function startServer(
       return id;
     },
     async prompt(sessionID, text) {
-      const model = { providerID: "opencode", modelID: LIVE_MODEL.split("/")[1] };
       const response = await post(`/session/${sessionID}/message`, {
-        model,
+        model: liveModelRef(),
         parts: [{ type: "text", text }],
       });
       await response.text();

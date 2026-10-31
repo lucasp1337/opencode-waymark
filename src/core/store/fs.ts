@@ -13,15 +13,20 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
+import { ulid } from "ulid";
 
 // The file operations Waymark needs, injected so tests can observe or break them.
 export interface FileSystem {
   // undefined when the file does not exist; other errors throw.
   readText(path: string): string | undefined;
-  // Writes `<path>.tmp`, fsyncs it, then renames over `path`, creating parent dirs. Once renamed
-  // the file is in place: a failure to sync its directories afterwards goes to `onUnsynced`, or
-  // throws when there is none.
+  // Writes `<path>.<pid>.<id>.tmp`, fsyncs it, then renames over `path`, creating parent dirs.
+  // Once renamed the file is in place: a failure to sync its directories afterwards goes to
+  // `onUnsynced`, or throws when there is none. A crash can leave a stray temp file; it is
+  // ignored and never deleted.
   writeAtomic(path: string, text: string, onUnsynced?: (error: unknown) => void): void;
+  // Creates `path` with `text` only if nothing is there yet, creating parent dirs. False when
+  // the file already exists.
+  createExclusive(path: string, text: string): boolean;
   remove(path: string): void;
   // Renames `from` to `to`, creating parent dirs and replacing any file already at `to`. Throws
   // when `from` does not exist.
@@ -31,6 +36,8 @@ export interface FileSystem {
   listFiles(dir: string): string[];
   // undefined when the file does not exist.
   mtimeMs(path: string): number | undefined;
+  // undefined when the file does not exist.
+  sizeBytes(path: string): number | undefined;
   // The path with every link resolved; undefined when it does not exist.
   realPath(path: string): string | undefined;
   // False for a file and for a path that does not exist; other errors throw.
@@ -77,27 +84,41 @@ function fsyncDirectories(leaf: string, firstCreated: string | undefined): void 
   }
 }
 
-// The temp name is fixed by design, so two processes writing the same memory at once share it.
-function writeAtomic(path: string, text: string, onUnsynced?: (error: unknown) => void): void {
-  const dir = dirname(path);
-  const firstCreated = mkdirSync(dir, { recursive: true });
-  const tmp = `${path}.tmp`;
-  const fd = openSync(tmp, "w");
+function createExclusive(path: string, text: string): boolean {
+  mkdirSync(dirname(path), { recursive: true });
   try {
-    writeFileSync(fd, text);
-    fsyncSync(fd);
-  } finally {
-    closeSync(fd);
-  }
-  renameSync(tmp, path);
-  try {
-    fsyncDirectories(dir, firstCreated);
+    writeFileSync(path, text, { flag: "wx" });
+    return true;
   } catch (error) {
-    if (onUnsynced === undefined) {
-      throw error;
+    if (hasCode(error, "EEXIST")) {
+      return false;
     }
-    onUnsynced(error);
+    throw error;
   }
+}
+
+function atomicWriter(newTmpSuffix: () => string): FileSystem["writeAtomic"] {
+  return (path, text, onUnsynced) => {
+    const dir = dirname(path);
+    const firstCreated = mkdirSync(dir, { recursive: true });
+    const tmp = `${path}.${newTmpSuffix()}.tmp`;
+    const fd = openSync(tmp, "w");
+    try {
+      writeFileSync(fd, text);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(tmp, path);
+    try {
+      fsyncDirectories(dir, firstCreated);
+    } catch (error) {
+      if (onUnsynced === undefined) {
+        throw error;
+      }
+      onUnsynced(error);
+    }
+  };
 }
 
 function move(from: string, to: string): void {
@@ -145,31 +166,39 @@ function listFiles(dir: string): string[] {
   return found;
 }
 
-export const nodeFileSystem: FileSystem = {
-  readText(path) {
-    try {
-      return readFileSync(path, "utf8");
-    } catch (error) {
-      if (isMissing(error)) {
-        return undefined;
+// `newTmpSuffix` must differ between every writer, in this process and in others, so two
+// writers of one file never share a temp file.
+export function createFileSystem(newTmpSuffix: () => string): FileSystem {
+  return {
+    readText(path) {
+      try {
+        return readFileSync(path, "utf8");
+      } catch (error) {
+        if (isMissing(error)) {
+          return undefined;
+        }
+        throw error;
       }
-      throw error;
-    }
-  },
-  writeAtomic,
-  remove: (path) => rmSync(path, { force: true }),
-  move,
-  listFiles,
-  mtimeMs: (path) => statSync(path, { throwIfNoEntry: false })?.mtimeMs,
-  realPath: (path) => {
-    try {
-      return realpathSync(path);
-    } catch (error) {
-      if (isMissing(error)) {
-        return undefined;
+    },
+    writeAtomic: atomicWriter(newTmpSuffix),
+    createExclusive,
+    remove: (path) => rmSync(path, { force: true }),
+    move,
+    listFiles,
+    mtimeMs: (path) => statSync(path, { throwIfNoEntry: false })?.mtimeMs,
+    sizeBytes: (path) => statSync(path, { throwIfNoEntry: false })?.size,
+    realPath: (path) => {
+      try {
+        return realpathSync(path);
+      } catch (error) {
+        if (isMissing(error)) {
+          return undefined;
+        }
+        throw error;
       }
-      throw error;
-    }
-  },
-  isDirectory,
-};
+    },
+    isDirectory,
+  };
+}
+
+export const nodeFileSystem: FileSystem = createFileSystem(() => `${process.pid}.${ulid()}`);

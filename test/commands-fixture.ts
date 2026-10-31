@@ -4,7 +4,7 @@ import { memoryCommandTool } from "../src/core/features/commands/memory-command"
 import type { ReviewSignals } from "../src/core/features/commands/review-report";
 import type { BudgetCaps } from "../src/core/features/save/budget";
 import type { MemoryId } from "../src/core/model/id";
-import { type Memory, type MemoryContent, newMemory } from "../src/core/model/memory";
+import { type Memory, newMemory } from "../src/core/model/memory";
 import type { ScopeRef } from "../src/core/model/scope";
 import type { Git, GitAnswer } from "../src/core/scope/git";
 import { createSessionScopes, type SessionScopes } from "../src/core/scope/session-scopes";
@@ -14,7 +14,7 @@ import { createFakeHost, type FakeHost } from "./fake-host";
 import { memoryId } from "./memory-id";
 import { rethrowCacheFailure } from "./rethrow-cache-failure";
 import { useTempDirs } from "./temp-dir";
-import { validContent } from "./valid-content";
+import { type ContentInput, validContent } from "./valid-content";
 
 export const API_SESSION = "ses_api";
 export const WEB_SESSION = "ses_web";
@@ -26,7 +26,7 @@ export const API_REPO: ScopeRef = { level: "repo", id: "github.com/acme/api" };
 export const USER: ScopeRef = { level: "user" };
 
 // Memories are seeded at this instant and the commands run a day later.
-const SEEDED_AT = new Date("2026-03-01T10:00:00.000Z");
+export const SEEDED_AT = new Date("2026-03-01T10:00:00.000Z");
 export const COMMAND_TIME = new Date("2026-03-02T10:00:00.000Z");
 
 // Small, so a budget test needs only a few lines of text.
@@ -57,7 +57,7 @@ export function idNumber(n: number): MemoryId {
 interface SeedSpec {
   readonly n: number;
   readonly scope: ScopeRef;
-  readonly content: MemoryContent;
+  readonly content: ContentInput;
   // The number of the memory this one replaces.
   readonly supersedes?: number;
 }

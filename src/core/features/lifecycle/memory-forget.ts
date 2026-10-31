@@ -1,3 +1,4 @@
+import { scopeKey } from "../../model/scope";
 import { notify } from "../../notify";
 import type { ToolDef } from "../../port";
 import { ID_PROPERTY } from "../content-schema";
@@ -11,7 +12,10 @@ async function forget(deps: ToolDeps, input: unknown): Promise<string> {
     return `Not forgotten: ${memory.error}`;
   }
   deps.store.forget(memory.value);
-  await notify(deps.host, `waymark · forgot ${memory.value.kind} · ${memory.value.title}`);
+  await notify(
+    deps.host,
+    `waymark · forgot ${memory.value.kind} · ${scopeKey(memory.value.scope)} · ${memory.value.title}`,
+  );
   return `Forgot ${memoryLine(memory.value)}`;
 }
 

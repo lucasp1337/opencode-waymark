@@ -37,7 +37,7 @@ describe("memory_link", () => {
 
   test("without a product the repos join the product one of them is in", async () => {
     const { link, registryFile } = setup();
-    linkRepos(nodeFileSystem, registryFile, { repos: [API], product: "payments" });
+    await linkRepos(nodeFileSystem, registryFile, { repos: [API], product: "payments" });
 
     expect(await link({ repos: [API, WEB] })).toStartWith(
       `Product payments now links ${API}, ${WEB}.`,
@@ -55,7 +55,7 @@ describe("memory_link", () => {
 
   test("a repo in another product is refused", async () => {
     const { link, registryFile } = setup();
-    linkRepos(nodeFileSystem, registryFile, { repos: [WEB], product: "storefront" });
+    await linkRepos(nodeFileSystem, registryFile, { repos: [WEB], product: "storefront" });
 
     expect(await link({ repos: [API, WEB], product: "payments" })).toBe(
       `Not linked: ${WEB} is in product storefront. A repo leaves its product with /memory unlink.`,
@@ -98,7 +98,7 @@ describe("memory_link", () => {
 
   test("two repos of one product cannot be declined", async () => {
     const { link, registryFile } = setup();
-    linkRepos(nodeFileSystem, registryFile, { repos: [API, WEB], product: "payments" });
+    await linkRepos(nodeFileSystem, registryFile, { repos: [API, WEB], product: "payments" });
 
     expect(await link({ repos: [API, WEB], decline: true })).toBe(
       `Not recorded: ${API} and ${WEB} are linked as product payments; /memory unlink separates them.`,
@@ -107,7 +107,7 @@ describe("memory_link", () => {
 
   test("a No already recorded is accepted again without a change", async () => {
     const { link, registryFile, registry } = setup();
-    declinePair(nodeFileSystem, registryFile, [API, WEB]);
+    await declinePair(nodeFileSystem, registryFile, [API, WEB]);
 
     expect(await link({ repos: [API, WEB], decline: true })).toStartWith("Recorded:");
     expect(registry()).toEqual({ declined: [[API, WEB]] });

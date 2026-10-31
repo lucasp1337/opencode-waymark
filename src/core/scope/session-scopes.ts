@@ -7,7 +7,7 @@ import { type ResolvedScopes, resolveScopes } from "./chain";
 import type { Git } from "./git";
 import { productOf } from "./products";
 import { type OrgEntry, type OrgRef, resolveOrg } from "./registry";
-import { catchRegistryIo } from "./registry-file";
+import { catchRegistryIo, catchRegistryIoAsync } from "./registry-file";
 
 export interface SessionScopes {
   chainFor(sessionID: string): Promise<ScopeChain>;
@@ -44,8 +44,8 @@ function resolveFor(deps: SessionScopeDeps, directory: string): Resolution {
   return { resolved, cacheable: true };
 }
 
-function enterOrg(deps: SessionScopeDeps, org: OrgRef): Result<OrgEntry, string> {
-  return catchRegistryIo(() => resolveOrg(deps.fs, deps.registryFile, org));
+function enterOrg(deps: SessionScopeDeps, org: OrgRef): Promise<Result<OrgEntry, string>> {
+  return catchRegistryIoAsync(() => resolveOrg(deps.fs, deps.registryFile, org));
 }
 
 // The registry is read on every call, not cached with the chain, so a merge or a product link
@@ -58,7 +58,7 @@ async function withOrg(
   if (org === undefined) {
     return chain;
   }
-  const entry = enterOrg(deps, org);
+  const entry = await enterOrg(deps, org);
   if (!entry.ok) {
     deps.host.log("warn", "org registry not applied", { org: org.id, error: entry.error });
     return chain;

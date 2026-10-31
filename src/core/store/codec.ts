@@ -4,7 +4,7 @@ import type { Memory, ValidContent } from "../model/memory";
 import { ownField } from "../model/own-field";
 import { err, ok, type Result } from "../model/result";
 import { parseScopeKey, type ScopeRef, scopeKey } from "../model/scope";
-import { parseContent } from "../model/validate";
+import { parseStoredContent } from "../model/validate";
 
 type Parsed<T> = Result<T, string>;
 
@@ -21,6 +21,7 @@ function frontmatterOf(memory: Memory) {
     title: memory.title,
     ...(memory.why === undefined ? {} : { why: memory.why }),
     ...(memory.triggers === undefined ? {} : { triggers: memory.triggers }),
+    ...(memory.locator === undefined ? {} : { locator: memory.locator }),
     created: memory.created,
     updated: memory.updated,
     ...(memory.supersedes === undefined ? {} : { supersedes: memory.supersedes }),
@@ -105,11 +106,12 @@ function problemOf(result: Parsed<unknown>): string[] {
 }
 
 function contentFrom(frontmatter: unknown, body: string): Parsed<ValidContent> {
-  const parsed = parseContent({
+  const parsed = parseStoredContent({
     kind: ownField(frontmatter, "kind"),
     title: ownField(frontmatter, "title"),
     why: ownField(frontmatter, "why"),
     triggers: ownField(frontmatter, "triggers"),
+    locator: ownField(frontmatter, "locator"),
     body,
   });
   return parsed.ok ? parsed : err(parsed.error.join("; "));

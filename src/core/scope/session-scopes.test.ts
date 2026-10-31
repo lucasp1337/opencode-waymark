@@ -152,8 +152,11 @@ describe("createSessionScopes", () => {
     const host = hostWith({ ses_a: "/work/api" });
     const scopes = scopesFor(host, gitAnswering(found("/work/api")), registryFile);
     await scopes.chainFor("ses_a");
-    resolveOrg(nodeFileSystem, registryFile, { id: "github.com/umbrella", owner: "umbrella" });
-    recordMerge(nodeFileSystem, registryFile, {
+    await resolveOrg(nodeFileSystem, registryFile, {
+      id: "github.com/umbrella",
+      owner: "umbrella",
+    });
+    await recordMerge(nodeFileSystem, registryFile, {
       into: "github.com/umbrella",
       from: "github.com/acme",
     });
@@ -208,7 +211,7 @@ describe("createSessionScopes", () => {
 
   test("a linked repo's chain has its product between the org and the repo", async () => {
     const registryFile = join(tempDir(), "registry.json");
-    linkRepos(nodeFileSystem, registryFile, {
+    await linkRepos(nodeFileSystem, registryFile, {
       repos: ["github.com/acme/api", "github.com/acme/web"],
       product: "payments",
     });
@@ -238,7 +241,7 @@ describe("createSessionScopes", () => {
     if (repoId === undefined) {
       throw new Error("a repo without an origin must still have a repo scope");
     }
-    linkRepos(nodeFileSystem, registryFile, { repos: [repoId], product: "notes" });
+    await linkRepos(nodeFileSystem, registryFile, { repos: [repoId], product: "notes" });
 
     expect(await scopes.chainFor("ses_a")).toEqual([
       { level: "user" },
@@ -252,7 +255,7 @@ describe("createSessionScopes", () => {
     const host = hostWith({ ses_a: "/work/api" });
     const scopes = scopesFor(host, gitAnswering(found("/work/api")), registryFile);
     await scopes.chainFor("ses_a");
-    linkRepos(nodeFileSystem, registryFile, {
+    await linkRepos(nodeFileSystem, registryFile, {
       repos: ["github.com/acme/api"],
       product: "payments",
     });

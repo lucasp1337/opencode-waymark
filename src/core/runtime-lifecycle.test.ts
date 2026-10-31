@@ -236,3 +236,30 @@ describe("noisy gotcha check", () => {
     expect(release).toBe(RELEASE_TEXT);
   });
 });
+
+describe("memories saved after the session block was frozen", () => {
+  const OTHER = "ses_other";
+
+  test("written by another session reach the session through the next tool output, once, while the block stays as it was", async () => {
+    const fx = runtime();
+    fx.host.sessions.set(OTHER, { id: OTHER, directory: "/work/api" });
+    const [before = ""] = await fx.host.emitSystem(SESSION);
+
+    await fx.host.callTool("memory_save", { ...fact, relation: "new" }, OTHER);
+    const [first = ""] = await fx.host.emitToolAfter(run(SESSION, "ls"));
+    const second = await fx.host.emitToolAfter(run(SESSION, "ls"));
+
+    expect(first).toContain(`[${FIRST_ID}] Staging resets nightly`);
+    expect(second).toEqual([]);
+    expect(await fx.host.emitSystem(SESSION)).toEqual([before]);
+  });
+
+  test("written by the session itself are not echoed back to it", async () => {
+    const fx = runtime();
+    await fx.host.emitSystem(SESSION);
+
+    await fx.host.callTool("memory_save", { ...fact, relation: "new" }, SESSION);
+
+    expect(await fx.host.emitToolAfter(run(SESSION, "ls"))).toEqual([]);
+  });
+});
