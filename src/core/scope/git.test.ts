@@ -2,7 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createProcessGit, processGit } from "./git";
+import {
+  createProcessGit,
+  createProcessOriginUrl,
+  exitOf,
+  processGit,
+  processOriginUrl,
+} from "./git";
 
 // A host no gitconfig rewrites with insteadOf, so the answer does not depend on the user's setup.
 const ORIGIN = "https://git.example.test/acme/api.git";
@@ -88,6 +94,55 @@ describe("processGit.originUrl", () => {
     expect(processGit.originUrl(tempDir())).toEqual({
       status: "failed",
       reason: "git remote get-url exited 128",
+    });
+  });
+});
+
+describe("processOriginUrl", () => {
+  test("returns the url of the origin remote", async () => {
+    expect(await processOriginUrl(tempRepo(ORIGIN))).toEqual({ status: "found", value: ORIGIN });
+  });
+
+  test("reports a repository without an origin remote as absent", async () => {
+    expect(await processOriginUrl(tempRepo())).toEqual({ status: "absent" });
+  });
+
+  test("reports git failing for another reason as failed", async () => {
+    expect(await processOriginUrl(tempDir())).toEqual({
+      status: "failed",
+      reason: "git remote get-url exited 128",
+    });
+  });
+
+  test("reports a directory that cannot be passed to a process as failed", async () => {
+    expect((await processOriginUrl("bad\0dir")).status).toBe("failed");
+  });
+
+  test("reports a git that does not answer in time as failed", async () => {
+    const repo = tempRepo();
+    const config = join(repo, ".git", "config");
+    rmSync(config);
+    expect(Bun.spawnSync(["mkfifo", config]).exitCode).toBe(0);
+
+    const answer = await createProcessOriginUrl(200)(repo);
+
+    expect(answer.status).toBe("failed");
+  });
+});
+
+describe("exitOf", () => {
+  test("reports a missing exit status without a signal as failed, not as success", () => {
+    expect(exitOf({ exitCode: null, signalCode: null, stdout: "" }, 100)).toEqual({
+      status: "failed",
+      reason: "git ended without an exit status",
+    });
+  });
+
+  test("reports the exit code and trimmed output of a normal exit", () => {
+    expect(exitOf({ exitCode: 0, signalCode: null, stdout: "x\n" }, 100)).toEqual({
+      status: "exited",
+      code: 0,
+      stdout: "x",
     });
   });
 });

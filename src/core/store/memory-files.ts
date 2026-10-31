@@ -1,4 +1,5 @@
-import { extname } from "node:path";
+import { basename, dirname, extname, sep } from "node:path";
+import type { MemoryId } from "../model/id";
 import type { Memory } from "../model/memory";
 import { err, ok, type Result } from "../model/result";
 import { decodeMemory, encodeMemory } from "./codec";
@@ -10,7 +11,8 @@ export interface MemoryFiles {
   // Returns the path written.
   write(memory: Memory): string;
   read(path: string): Result<Memory, string>;
-  remove(memory: Memory): void;
+  // Every file named for this id, wherever it lies: a stray copy would bring the memory back.
+  removeAll(id: MemoryId): void;
   // Every memory file under the scope roots; temp files and other files are not listed.
   listPaths(): string[];
   mtimeMs(path: string): number | undefined;
@@ -26,11 +28,36 @@ function readText(fs: FileSystem, path: string): Result<string, string> {
   }
 }
 
-export function createMemoryFiles(root: string, fs: FileSystem): MemoryFiles {
+// Listing follows symlinks, so a listed file may lie outside the data root; deleting it would
+// reach into somewhere the user never gave Waymark. The file's own link may go, its target not.
+function isInsideRoot(fs: FileSystem, root: string, path: string): boolean {
+  const realRoot = fs.realPath(root);
+  const realDir = fs.realPath(dirname(path));
+  return (
+    realRoot !== undefined &&
+    realDir !== undefined &&
+    (realDir === realRoot || realDir.startsWith(`${realRoot}${sep}`))
+  );
+}
+
+// `onUnsynced` hears a written file whose directories could not be synced; the file is in place.
+export function createMemoryFiles(
+  root: string,
+  fs: FileSystem,
+  onUnsynced?: (path: string, error: unknown) => void,
+): MemoryFiles {
+  const listPaths = (): string[] =>
+    scopeRoots(root)
+      .flatMap((dir) => fs.listFiles(dir))
+      .filter((path) => extname(path) === ".md");
   return {
     write(memory) {
       const path = memoryPath(root, memory);
-      fs.writeAtomic(path, encodeMemory(memory));
+      fs.writeAtomic(
+        path,
+        encodeMemory(memory),
+        onUnsynced && ((error) => onUnsynced(path, error)),
+      );
       return path;
     },
     read(path) {
@@ -46,11 +73,13 @@ export function createMemoryFiles(root: string, fs: FileSystem): MemoryFiles {
       const expected = memoryPath(root, decoded.value);
       return expected === path ? decoded : err(`${path}: belongs at ${expected}`);
     },
-    remove: (memory) => fs.remove(memoryPath(root, memory)),
-    listPaths: () =>
-      scopeRoots(root)
-        .flatMap((dir) => fs.listFiles(dir))
-        .filter((path) => extname(path) === ".md"),
+    removeAll(id) {
+      const named = listPaths().filter((candidate) => basename(candidate) === `${id}.md`);
+      for (const path of named.filter((candidate) => isInsideRoot(fs, root, candidate))) {
+        fs.remove(path);
+      }
+    },
+    listPaths,
     mtimeMs: (path) => fs.mtimeMs(path),
   };
 }

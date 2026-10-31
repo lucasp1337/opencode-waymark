@@ -12,6 +12,7 @@ import { type MemoryStore, openMemoryStore } from "../src/core/store/memory-stor
 import { openVectorIndex, type VectorIndex } from "../src/core/store/vector-index";
 import { createFakeHost, type FakeHost } from "./fake-host";
 import { memoryId } from "./memory-id";
+import { rethrowCacheFailure } from "./rethrow-cache-failure";
 import { useTempDirs } from "./temp-dir";
 import { validContent } from "./valid-content";
 
@@ -37,7 +38,9 @@ export function useSearchFixture(): (embedder: Pick<LazyEmbedder, "request">) =>
   });
   return (embedder) => {
     const root = tempRoot();
-    const { store } = openMemoryStore(root, nodeFileSystem);
+    const { store } = openMemoryStore(root, nodeFileSystem, {
+      onCacheFailure: rethrowCacheFailure,
+    });
     const { index: vectors } = openVectorIndex(join(root, "vectors.sqlite"));
     opened.push(store, vectors);
     const host = createFakeHost();

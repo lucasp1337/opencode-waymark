@@ -7,8 +7,8 @@ import type { Capabilities } from "../src/core/port";
 import { createRuntime, type Runtime } from "../src/core/runtime";
 import type { Git } from "../src/core/scope/git";
 import type { Embedder } from "../src/core/store/embedder";
-import { nodeFileSystem } from "../src/core/store/fs";
 import { createFakeHost, type FakeHost } from "./fake-host";
+import { fakeRepos } from "./fake-repos";
 import { memoryId } from "./memory-id";
 
 const REPO_DIR = "/work/api";
@@ -36,6 +36,8 @@ const fakeGit: Git = {
     return origin === undefined ? { status: "absent" } : { status: "found", value: origin };
   },
 };
+
+const repos = fakeRepos(ORIGINS);
 
 interface FakeClock {
   now(): Date;
@@ -99,8 +101,9 @@ function start(activation: Activation): RuntimeFixture {
   const { dataDir, clock, newId } = activation;
   const runtime = createRuntime(host, {
     dataDir,
-    fs: nodeFileSystem,
+    fs: repos.fs,
     git: fakeGit,
+    originUrl: repos.originUrl,
     now: clock.now,
     newId,
     options: activation.setup.options,

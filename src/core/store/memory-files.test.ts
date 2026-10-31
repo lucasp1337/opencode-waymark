@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  renameSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { memoryId } from "../../../test/memory-id";
 import { useTempDirs } from "../../../test/temp-dir";
@@ -131,15 +138,49 @@ describe("createMemoryFiles", () => {
     files.write(gone);
     const keptPath = files.write(kept);
 
-    files.remove(gone);
+    files.removeAll(gone.id);
 
     expect(files.listPaths()).toEqual([keptPath]);
+  });
+
+  test("never removes a file that a symlinked directory leads to outside the data root", () => {
+    const root = tempRoot();
+    const outside = tempRoot();
+    const memory = memoryIn(USER);
+    const outsideFile = join(outside, `${memory.id}.md`);
+    writeFileSync(outsideFile, "not Waymark's");
+    mkdirSync(join(root, "user"), { recursive: true });
+    symlinkSync(outside, join(root, "user", "fact"));
+    const files = createMemoryFiles(root, nodeFileSystem);
+    expect(files.listPaths()).toHaveLength(1);
+
+    files.removeAll(memory.id);
+
+    expect(existsSync(outsideFile)).toBe(true);
+  });
+
+  test("reports a write whose directories could not be synced and still returns the path", () => {
+    const unsynced: unknown[] = [];
+    const syncFails: FileSystem = {
+      ...nodeFileSystem,
+      writeAtomic(path, text, onUnsynced) {
+        nodeFileSystem.writeAtomic(path, text);
+        onUnsynced?.(new Error("EIO"));
+      },
+    };
+    const files = createMemoryFiles(tempRoot(), syncFails, (path, error) =>
+      unsynced.push([path, String(error)]),
+    );
+
+    const path = files.write(memoryIn(USER));
+
+    expect(unsynced).toEqual([[path, "Error: EIO"]]);
   });
 
   test("removing a memory that was never written is not an error", () => {
     const files = createMemoryFiles(tempRoot(), nodeFileSystem);
 
-    expect(() => files.remove(memoryIn(USER))).not.toThrow();
+    expect(() => files.removeAll(memoryIn(USER).id)).not.toThrow();
   });
 
   test("reports the modification time of a file and nothing for a missing one", () => {

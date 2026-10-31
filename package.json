@@ -7,8 +7,8 @@
     "opencode": "1.19.4"
   },
   "scripts": {
-    "test": "bun test --coverage --path-ignore-patterns 'test/live/**' --path-ignore-patterns 'vendor/**'",
-    "test:live": "bun test test/live --timeout 240000",
+    "test": "bun test --coverage",
+    "test:live": "bun test test/live --path-ignore-patterns 'vendor/**' --timeout 240000",
     "lint": "biome check . && knip",
     "typecheck": "tsc --noEmit"
   },

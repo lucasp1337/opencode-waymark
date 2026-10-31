@@ -10,6 +10,7 @@ import {
   NOTES_SESSION,
   USER,
   useCommandFixture,
+  WEB_SESSION,
 } from "../../../../test/commands-fixture";
 
 const fixture = useCommandFixture();
@@ -448,6 +449,44 @@ describe("memory_command move and replaced memories", () => {
     fx.seed({ n: 2, scope: API_REPO, content: fact("New"), supersedes: 1 });
 
     expect(await fx.run(`move ${ID_2} org`)).toStartWith(`Not moved: [${ID_2}] replaces [${ID_1}]`);
+  });
+});
+
+describe("memory_command move and replaced product memories", () => {
+  const fact = (title: string) => ({ kind: "fact", title, body: "" }) as const;
+  const PAYMENTS = { level: "product", id: "payments" } as const;
+
+  // api (org acme) and web (org acme-labs) are one product, so the product reaches two orgs.
+  async function twoOrgProduct() {
+    const fx = fixture();
+    await fx.run("link payments");
+    await fx.run("link payments", WEB_SESSION);
+    fx.seed({ n: 1, scope: PAYMENTS, content: fact("Old") });
+    fx.seed({ n: 2, scope: API_REPO, content: fact("New"), supersedes: 1 });
+    return fx;
+  }
+
+  test("refuses to move a replacement of a product memory to an org, since the product spans orgs", async () => {
+    const fx = await twoOrgProduct();
+
+    expect(await fx.run(`move ${ID_2} org`)).toStartWith(`Not moved: [${ID_2}] replaces [${ID_1}]`);
+    expect(fx.store.get(ID_2)?.scope).toEqual(API_REPO);
+  });
+
+  test("moves a replacement of a product memory to the product or to the user scope", async () => {
+    const fx = await twoOrgProduct();
+
+    expect(await fx.run(`move ${ID_2} product`)).toStartWith("Moved ");
+    expect(await fx.run(`move ${ID_2} user`)).toStartWith("Moved ");
+  });
+
+  test("moves a replacement of a repo memory to the product the repo is in", async () => {
+    const fx = fixture();
+    await fx.run("link payments");
+    fx.seed({ n: 1, scope: API_REPO, content: fact("Old") });
+    fx.seed({ n: 2, scope: API_REPO, content: fact("New"), supersedes: 1 });
+
+    expect(await fx.run(`move ${ID_2} product`)).toStartWith("Moved ");
   });
 });
 

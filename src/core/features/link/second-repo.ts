@@ -1,16 +1,17 @@
 import { repoIdIn } from "../../model/scope";
 import type { HostPort, ToolCallInfo } from "../../port";
-import type { Git } from "../../scope/git";
+import type { AsyncOriginUrl } from "../../scope/git";
 import { type PairStatus, pairStatus } from "../../scope/products";
 import { catchRegistryIo } from "../../scope/registry-file";
 import type { FileSystem } from "../../store/fs";
 import type { RecallScope } from "../recall/recall-scope";
-import { createTouchedRepos } from "./touched-repos";
+import { createRepoIds, type RepoIds } from "./repo-ids";
+import { createTouchedRoots } from "./touched-repos";
 
 interface SecondRepoDeps {
   // null: this session gets no recall, and no hint.
   recallScope(sessionID: string): Promise<RecallScope | null>;
-  readonly git: Git;
+  readonly originUrl: AsyncOriginUrl;
   readonly fs: FileSystem;
   readonly registryFile: string;
   readonly log: HostPort["log"];
@@ -30,6 +31,8 @@ interface Hint {
 }
 
 interface SessionHints {
+  // Repo roots this session touched whose repo is not known yet.
+  unresolved: Set<string>;
   // Other repos this session has been hinted about or needs no hint for.
   readonly decided: Set<string>;
   // Waiting for a call whose output can carry them.
@@ -93,17 +96,36 @@ function takeQueued(
     : hints.map(({ other, product }) => hintText(repo, other, product)).join("\n\n");
 }
 
+// The repos, other than `own`, of this session's unresolved roots that are known by now. A root's
+// origin is looked up off the hook's path, so a hint follows the first call into a repo by one
+// call and never delays it.
+function resolvedOthers(repoIds: RepoIds, state: SessionHints, own: string): string[] {
+  const repos: string[] = [];
+  for (const root of state.unresolved) {
+    const found = repoIds.lookup(root);
+    if (found.status === "pending") {
+      continue;
+    }
+    state.unresolved.delete(root);
+    if (found.status === "known" && found.repo !== undefined && found.repo !== own) {
+      repos.push(found.repo);
+    }
+  }
+  return repos;
+}
+
 // Everything after the one await is synchronous, so parallel calls of a session cannot both hint
 // the same repo.
 export function createSecondRepoHints(deps: SecondRepoDeps): SecondRepoHints {
-  const touchedRepos = createTouchedRepos(deps);
+  const touchedRoots = createTouchedRoots(deps);
+  const repoIds = createRepoIds({ originUrl: deps.originUrl, log: deps.log });
   const sessions = new Map<string, SessionHints>();
   const stateOf = (sessionID: string): SessionHints => {
     const known = sessions.get(sessionID);
     if (known !== undefined) {
       return known;
     }
-    const created: SessionHints = { decided: new Set(), queued: [] };
+    const created: SessionHints = { unresolved: new Set(), decided: new Set(), queued: [] };
     sessions.set(sessionID, created);
     return created;
   };
@@ -115,8 +137,8 @@ export function createSecondRepoHints(deps: SecondRepoDeps): SecondRepoHints {
         return null;
       }
       const state = stateOf(call.sessionID);
-      const others = touchedRepos(call, scope.directory).filter((other) => other !== repo);
-      for (const other of others) {
+      state.unresolved = new Set([...state.unresolved, ...touchedRoots(call, scope.directory)]);
+      for (const other of resolvedOthers(repoIds, state, repo)) {
         decide(deps, state, [repo, other]);
       }
       return call.appendable
@@ -125,6 +147,7 @@ export function createSecondRepoHints(deps: SecondRepoDeps): SecondRepoHints {
     },
     forget(sessionID) {
       sessions.delete(sessionID);
+      repoIds.retryFailed();
     },
   };
 }

@@ -1,6 +1,7 @@
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import type { Memory } from "../model/memory";
 import { isSafeScopeId, type ScopeLevel, type ScopeRef } from "../model/scope";
+import { absoluteOr } from "../xdg";
 
 const LEVEL_DIRS: { readonly [L in ScopeLevel]: string } = {
   user: "user",
@@ -16,14 +17,8 @@ export class UnsafeScopeIdError extends Error {
   }
 }
 
-// The XDG spec says relative values must be ignored.
 export function dataRoot(env: Record<string, string | undefined>, home: string): string {
-  const xdgDataHome = env.XDG_DATA_HOME;
-  const base =
-    xdgDataHome !== undefined && isAbsolute(xdgDataHome)
-      ? xdgDataHome
-      : join(home, ".local", "share");
-  return join(base, "waymark");
+  return join(absoluteOr(env.XDG_DATA_HOME, join(home, ".local", "share")), "waymark");
 }
 
 // Scope ids may contain "/" (host/owner/name) and become nested directories. They are validated

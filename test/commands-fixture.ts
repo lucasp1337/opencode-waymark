@@ -12,6 +12,7 @@ import { nodeFileSystem } from "../src/core/store/fs";
 import { type MemoryStore, openMemoryStore } from "../src/core/store/memory-store";
 import { createFakeHost, type FakeHost } from "./fake-host";
 import { memoryId } from "./memory-id";
+import { rethrowCacheFailure } from "./rethrow-cache-failure";
 import { useTempDirs } from "./temp-dir";
 import { validContent } from "./valid-content";
 
@@ -100,7 +101,9 @@ export function useCommandFixture(setup: CommandSetup = {}): () => CommandFixtur
     const registryFile = join(dataDir, "registry.json");
     const host = createFakeHost();
     sessionsFor(host);
-    const { store } = openMemoryStore(dataDir, nodeFileSystem);
+    const { store } = openMemoryStore(dataDir, nodeFileSystem, {
+      onCacheFailure: rethrowCacheFailure,
+    });
     stores.push(store);
     const scopesOn = (activation: FakeHost) =>
       createSessionScopes({ host: activation, git: fakeGit, fs: nodeFileSystem, registryFile });

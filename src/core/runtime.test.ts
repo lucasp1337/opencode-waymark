@@ -14,7 +14,7 @@ import { useTempDirs } from "../../test/temp-dir";
 import { validContent } from "../../test/valid-content";
 import { newMemory } from "./model/memory";
 import { activate, type RuntimeDeps } from "./runtime";
-import { processGit } from "./scope/git";
+import { processGit, processOriginUrl } from "./scope/git";
 import { nodeFileSystem } from "./store/fs";
 import { createMemoryFiles } from "./store/memory-files";
 
@@ -192,6 +192,7 @@ function depsIn(dataDir: string): RuntimeDeps {
     dataDir,
     fs: nodeFileSystem,
     git: processGit,
+    originUrl: processOriginUrl,
     now: () => new Date(0),
     newId: () => memoryId(ID),
     loadEmbedder: () => Promise.reject(new Error("no model in this test")),

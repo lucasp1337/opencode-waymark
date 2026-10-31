@@ -16,4 +16,10 @@ describe("systemDeps", () => {
     expect(ids.toSorted()).toEqual(ids);
     expect(new Set(ids).size).toBe(3);
   });
+
+  test("refuses an id source that produces something that is not an id", () => {
+    const { newId } = systemDeps({}, () => "not-an-id");
+
+    expect(() => newId()).toThrow("ulid produced an invalid id: not-an-id");
+  });
 });

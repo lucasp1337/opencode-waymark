@@ -60,6 +60,8 @@ interface SyncedCache extends OpenedCache {
 interface CachedMemory {
   readonly memory: Memory;
   readonly path: string;
+  // The modification time of the file when it was indexed.
+  readonly mtimeMs: number;
 }
 
 export interface RelatedQuery {
@@ -79,6 +81,9 @@ export interface MemoryCache {
   put(memory: Memory, path: string, mtimeMs: number): void;
   delete(id: MemoryId): void;
   get(id: MemoryId): CachedMemory | undefined;
+  // Changes whenever another connection to the cache file committed; never for this one's own
+  // writes. Several plugin instances share one cache file.
+  foreignChanges(): number;
   // Oldest first.
   inScopes(scopes: ScopeChain): Memory[];
   // Best match first, over title and body.
@@ -113,7 +118,11 @@ function cachedMemory(row: unknown): CachedMemory {
   if (!decoded.ok) {
     throw new CacheCorruptError(`memory ${id}`, `cannot be decoded: ${decoded.error}`);
   }
-  return { memory: decoded.value, path: textColumn(row, "path") };
+  return {
+    memory: decoded.value,
+    path: textColumn(row, "path"),
+    mtimeMs: numberColumn(row, "mtime"),
+  };
 }
 
 function placeholders(count: number): string {
@@ -298,7 +307,7 @@ function relatedMemories(db: Database, { text, scopes, kinds, limit }: RelatedQu
   const kindFilter = kinds === undefined ? "" : `AND m.kind IN (${placeholders(kinds.length)})`;
   const rows = select(
     db,
-    `SELECT m.id, m.path, m.source
+    `SELECT m.id, m.path, m.mtime, m.source
      FROM memory_text AS f JOIN memories AS m ON m.seq = f.rowid
      WHERE memory_text MATCH ? AND m.scope IN (${placeholders(keys.length)}) ${kindFilter}
      ORDER BY bm25(memory_text), m.id
@@ -320,8 +329,11 @@ function cacheOver(db: Database): MemoryCache {
     delete(id) {
       writing(db, () => removeById(db, id));
     },
+    foreignChanges() {
+      return numberColumn(select(db, "PRAGMA data_version", [])[0], "data_version");
+    },
     get(id) {
-      const [row] = select(db, "SELECT id, path, source FROM memories WHERE id = ?", [id]);
+      const [row] = select(db, "SELECT id, path, mtime, source FROM memories WHERE id = ?", [id]);
       return row === undefined ? undefined : cachedMemory(row);
     },
     inScopes(scopes) {
@@ -331,7 +343,7 @@ function cacheOver(db: Database): MemoryCache {
       const keys = scopes.map(scopeKey);
       const rows = select(
         db,
-        `SELECT id, path, source FROM memories WHERE scope IN (${placeholders(keys.length)})`,
+        `SELECT id, path, mtime, source FROM memories WHERE scope IN (${placeholders(keys.length)})`,
         keys,
       );
       return rows.map((row) => cachedMemory(row).memory).toSorted(byCreation);

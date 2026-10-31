@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFileLogger, logFilePath } from "./logger";
@@ -17,6 +17,14 @@ describe("logFilePath", () => {
 
   test("falls back to ~/.local/state", () => {
     expect(logFilePath({})).toEndWith("/.local/state/waymark/waymark.log");
+  });
+
+  test("falls back when XDG_STATE_HOME is empty", () => {
+    expect(logFilePath({ XDG_STATE_HOME: "" })).toEndWith("/.local/state/waymark/waymark.log");
+  });
+
+  test("falls back when XDG_STATE_HOME is relative", () => {
+    expect(logFilePath({ XDG_STATE_HOME: "state" })).toEndWith("/.local/state/waymark/waymark.log");
   });
 });
 
@@ -37,11 +45,28 @@ describe("createFileLogger", () => {
     rmSync(dir, { recursive: true });
   });
 
-  test("does not throw when the file cannot be written", () => {
+  test("does not throw when the data cannot be serialized, and keeps logging", () => {
     const dir = tempDir();
-    const logger = createFileLogger(join(dir, "waymark.log"), () => NOW);
+    const file = join(dir, "waymark.log");
+    const logger = createFileLogger(file, () => NOW);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    expect(() => logger.log("warn", "circular", circular)).not.toThrow();
+    expect(() => logger.log("warn", "big", 10n)).not.toThrow();
+    logger.log("info", "after");
+
+    expect(readFileSync(file, "utf8").trim().split("\n")).toHaveLength(1);
     rmSync(dir, { recursive: true });
+  });
+
+  test("does not throw when the log directory cannot be created", () => {
+    const dir = tempDir();
+    const blocker = join(dir, "blocker");
+    writeFileSync(blocker, "");
+    const logger = createFileLogger(join(blocker, "nested", "waymark.log"), () => NOW);
 
     expect(() => logger.log("warn", "lost")).not.toThrow();
+    rmSync(dir, { recursive: true });
   });
 });

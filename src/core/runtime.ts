@@ -26,7 +26,7 @@ import type { ToolDeps } from "./features/tool-deps";
 import type { MemoryId } from "./model/id";
 import { parseOptions } from "./options";
 import type { HostPort } from "./port";
-import type { Git } from "./scope/git";
+import type { AsyncOriginUrl, Git } from "./scope/git";
 import { createSessionScopes, type SessionScopes } from "./scope/session-scopes";
 import type { SyncReport } from "./store/cache";
 import type { Embedder } from "./store/embedder";
@@ -40,6 +40,7 @@ export interface RuntimeDeps {
   readonly dataDir: string;
   readonly fs: FileSystem;
   readonly git: Git;
+  readonly originUrl: AsyncOriginUrl;
   readonly now: () => Date;
   readonly newId: () => MemoryId;
   // Loads the local embedding model; called at most once, on the first search.
@@ -189,7 +190,7 @@ function registerSecondRepoHints(
 ): Forgetter {
   const hints = createSecondRepoHints({
     recallScope,
-    git: deps.git,
+    originUrl: deps.originUrl,
     fs: deps.fs,
     registryFile,
     log: host.log,
@@ -245,7 +246,15 @@ function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void 
 
 // One activation: everything stateful is created here and released by dispose.
 export function createRuntime(host: HostPort, deps: RuntimeDeps): Runtime {
-  const { store, report, cacheReset } = openMemoryStore(deps.dataDir, deps.fs);
+  const { store, report, cacheReset } = openMemoryStore(deps.dataDir, deps.fs, {
+    onCacheFailure: (operation, error) =>
+      host.log("error", "memory cache update failed", { operation, error: String(error) }),
+    onDirectorySyncFailure: (path, error) =>
+      host.log("warn", "memory file saved but its directory was not synced", {
+        path,
+        error: String(error),
+      }),
+  });
   logOpening(host, report, cacheReset);
   const open: Array<{ close(): void }> = [store];
   try {

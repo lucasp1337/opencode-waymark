@@ -49,6 +49,37 @@ describe("nodeFileSystem", () => {
     expect(fs.listFiles(join(dir, "nope"))).toEqual([]);
   });
 
+  test("listFiles follows a symlinked file and a symlinked directory", () => {
+    const dir = tempDir();
+    const outside = tempDir();
+    writeFileSync(join(outside, "real.md"), "");
+    mkdirSync(join(outside, "folder"));
+    writeFileSync(join(outside, "folder", "inside.md"), "");
+    symlinkSync(join(outside, "real.md"), join(dir, "file-link.md"));
+    symlinkSync(join(outside, "folder"), join(dir, "dir-link"));
+
+    expect(fs.listFiles(dir).sort()).toEqual([
+      join(dir, "dir-link", "inside.md"),
+      join(dir, "file-link.md"),
+    ]);
+  });
+
+  test("listFiles ends when a symlink points back up the tree", () => {
+    const dir = tempDir();
+    mkdirSync(join(dir, "a"));
+    writeFileSync(join(dir, "a", "m.md"), "");
+    symlinkSync(dir, join(dir, "a", "back"));
+
+    expect(fs.listFiles(dir)).toEqual([join(dir, "a", "m.md")]);
+  });
+
+  test("listFiles skips a dangling symlink", () => {
+    const dir = tempDir();
+    symlinkSync(join(dir, "missing"), join(dir, "dangling.md"));
+
+    expect(fs.listFiles(dir)).toEqual([]);
+  });
+
   test("listFiles rethrows when the path is a file", () => {
     const dir = tempDir();
     writeFileSync(join(dir, "f"), "");

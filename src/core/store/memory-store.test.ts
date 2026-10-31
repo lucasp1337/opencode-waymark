@@ -3,13 +3,19 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { memoryId } from "../../../test/memory-id";
+import { rethrowCacheFailure } from "../../../test/rethrow-cache-failure";
 import { useTempDirs } from "../../../test/temp-dir";
 import { validContent } from "../../../test/valid-content";
 import { type Memory, newMemory } from "../model/memory";
 import type { ScopeRef } from "../model/scope";
 import { type FileSystem, nodeFileSystem } from "./fs";
 import { createMemoryFiles } from "./memory-files";
-import { MemoryFileMissingError, type MemoryStore, openMemoryStore } from "./memory-store";
+import {
+  MemoryFileMissingError,
+  type MemoryStore,
+  openMemoryStore,
+  type StoreFailureReporting,
+} from "./memory-store";
 
 const USER: ScopeRef = { level: "user" };
 const REPO: ScopeRef = { level: "repo", id: "github.com/acme/api" };
@@ -40,8 +46,12 @@ function titles(memories: readonly Memory[]): string[] {
   return memories.map((memory) => memory.title);
 }
 
-function openStore(root: string, fs: FileSystem = nodeFileSystem) {
-  const result = openMemoryStore(root, fs);
+function openStore(
+  root: string,
+  fs: FileSystem = nodeFileSystem,
+  reporting: StoreFailureReporting = { onCacheFailure: rethrowCacheFailure },
+) {
+  const result = openMemoryStore(root, fs, reporting);
   opened.push(result.store);
   return result;
 }
@@ -62,6 +72,29 @@ function damageCachedText(root: string): void {
   } finally {
     db.close();
   }
+}
+
+// Makes every cache row insert and delete fail like a busy database; the returned function repairs it.
+function breakCacheWrites(root: string): () => void {
+  const sql = (name: string, event: string) =>
+    `CREATE TRIGGER ${name} BEFORE ${event} ON memories BEGIN SELECT RAISE(ABORT, 'busy'); END;`;
+  const withCache = (run: (db: Database) => void) => {
+    const db = new Database(join(root, "cache.sqlite"));
+    try {
+      run(db);
+    } finally {
+      db.close();
+    }
+  };
+  withCache((db) => {
+    db.exec(sql("no_insert", "INSERT"));
+    db.exec(sql("no_delete", "DELETE"));
+  });
+  return () =>
+    withCache((db) => {
+      db.exec("DROP TRIGGER no_insert");
+      db.exec("DROP TRIGGER no_delete");
+    });
 }
 
 function countingFileSystem() {
@@ -255,6 +288,28 @@ describe("save", () => {
     expect(memoryFiles(root).listPaths()).toHaveLength(1);
   });
 
+  test("a save whose directory sync failed still succeeds and is reported with its path", () => {
+    const syncFails: FileSystem = {
+      ...nodeFileSystem,
+      writeAtomic(path, text, onUnsynced) {
+        nodeFileSystem.writeAtomic(path, text);
+        onUnsynced?.(new Error("EIO"));
+      },
+    };
+    const reported: string[] = [];
+    const root = tempRoot();
+    const { store } = openStore(root, syncFails, {
+      onCacheFailure: rethrowCacheFailure,
+      onDirectorySyncFailure: (path) => reported.push(path),
+    });
+    const original = fixture(1);
+
+    store.save(original);
+
+    expect(store.get(original.id)).toEqual(original);
+    expect(reported).toEqual([join(root, "user", "fact", `${original.id}.md`)]);
+  });
+
   test("saves when the cached location of the memory no longer holds a file", () => {
     const root = tempRoot();
     const { store } = openStore(root);
@@ -299,11 +354,37 @@ describe("save", () => {
     expect(report.invalid).toEqual([{ path: oldPath, error: `duplicate id ${original.id}` }]);
   });
 
-  test("does not hide a failure of the cache that is not damage", () => {
-    const { store } = openStore(tempRoot());
+  test("fails without writing when the cache cannot say where the memory was", () => {
+    const root = tempRoot();
+    const { store } = openStore(root);
     store.close();
 
     expect(() => store.save(fixture(1))).toThrow();
+    expect(memoryFiles(root).listPaths()).toEqual([]);
+  });
+
+  test("a cache failure after the file is written is reported, not thrown", () => {
+    const root = tempRoot();
+    const failures: string[] = [];
+    const { store } = openStore(root, nodeFileSystem, {
+      onCacheFailure: (operation) => failures.push(operation),
+    });
+    breakCacheWrites(root);
+
+    expect(() => store.save(fixture(1))).not.toThrow();
+    expect(failures).toEqual(["save"]);
+    expect(memoryFiles(root).listPaths()).toHaveLength(1);
+  });
+
+  test("a memory saved while the cache was failing is found once the cache works again", () => {
+    const root = tempRoot();
+    const { store } = openStore(root, nodeFileSystem, { onCacheFailure: () => undefined });
+    const unbreak = breakCacheWrites(root);
+    store.save(fixture(1));
+    unbreak();
+
+    expect(titles(store.inScopes(CHAIN))).toEqual(["Memory 1"]);
+    expect(store.get(fixture(1).id)).toEqual(fixture(1));
   });
 
   test("fails when the file is gone right after it was written", () => {
@@ -350,6 +431,108 @@ describe("forget", () => {
     const { store } = openStore(root);
 
     expect(store.get(fixture(1).id)).toBeUndefined();
+  });
+});
+
+describe("forget when the cache fails", () => {
+  test("reports success and stops recalling the memory once the cache works again", () => {
+    const root = tempRoot();
+    const failures: string[] = [];
+    const { store } = openStore(root, nodeFileSystem, {
+      onCacheFailure: (operation) => failures.push(operation),
+    });
+    store.save(fixture(1));
+    const unbreak = breakCacheWrites(root);
+
+    expect(() => store.forget(fixture(1))).not.toThrow();
+    unbreak();
+
+    expect(failures).toEqual(["forget"]);
+    expect(store.inScopes(CHAIN)).toEqual([]);
+    expect(memoryFiles(root).listPaths()).toEqual([]);
+  });
+});
+
+describe("forget with a stray copy", () => {
+  test("removes every file carrying the id so the memory stays gone after a restart", () => {
+    const root = tempRoot();
+    const first = openStore(root).store;
+    const original = fixture(1);
+    first.save(original);
+    memoryFiles(root).write({ ...original, kind: "preference" });
+
+    first.forget(original);
+    first.close();
+
+    expect(memoryFiles(root).listPaths()).toEqual([]);
+    expect(openStore(root).store.get(original.id)).toBeUndefined();
+  });
+});
+
+describe("edits made behind the store", () => {
+  test("get returns a file edited by hand while the store is open", () => {
+    const root = tempRoot();
+    const { store } = openStore(root);
+    store.save(fixture(1, USER, "Before"));
+    const path = memoryFiles(root).write(fixture(1, USER, "Edited"));
+    utimesSync(path, EDITED_AT, EDITED_AT);
+
+    expect(store.get(fixture(1).id)?.title).toBe("Edited");
+  });
+
+  test("an update built from get keeps the hand edit", () => {
+    const root = tempRoot();
+    const { store } = openStore(root);
+    store.save(fixture(1, USER, "Before"));
+    const path = memoryFiles(root).write({ ...fixture(1, USER, "Edited"), body: "hand written" });
+    utimesSync(path, EDITED_AT, EDITED_AT);
+
+    const current = store.get(fixture(1).id);
+    if (current === undefined) {
+      throw new Error("memory should exist");
+    }
+    store.save({ ...current, why: "because" });
+
+    expect(store.get(fixture(1).id)).toMatchObject({
+      title: "Edited",
+      body: "hand written",
+      why: "because",
+    });
+  });
+
+  test("get no longer returns a memory whose file was deleted by hand", () => {
+    const root = tempRoot();
+    const { store } = openStore(root);
+    store.save(fixture(1));
+    nodeFileSystem.remove(join(root, "user", "fact", `${fixture(1).id}.md`));
+
+    expect(store.get(fixture(1).id)).toBeUndefined();
+    expect(store.inScopes(CHAIN)).toEqual([]);
+  });
+
+  test("resync drops a deleted file's memory, indexes a new one and bumps the generation", () => {
+    const root = tempRoot();
+    const { store } = openStore(root);
+    store.save(fixture(1));
+    nodeFileSystem.remove(join(root, "user", "fact", `${fixture(1).id}.md`));
+    memoryFiles(root).write(fixture(2));
+    const before = store.generation();
+
+    const report = store.resync();
+
+    expect(report).toEqual({ indexed: 1, removed: 1, invalid: [] });
+    expect(titles(store.inScopes(CHAIN))).toEqual(["Memory 2"]);
+    expect(store.generation()).not.toBe(before);
+  });
+
+  test("resync leaves the generation alone when nothing changed", () => {
+    const { store } = openStore(tempRoot());
+    store.save(fixture(1));
+    const before = store.generation();
+
+    store.resync();
+
+    expect(store.generation()).toBe(before);
   });
 });
 

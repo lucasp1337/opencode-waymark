@@ -78,22 +78,30 @@ describe("products", () => {
   });
 });
 
+// A repo's origin is looked up off the tool call's path, so the hint rides on the call after it.
+async function settled(): Promise<void> {
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
 describe("working across two repos", () => {
-  test("the first call into the other repo carries exactly one hint", async () => {
+  test("the call after the first into the other repo carries exactly one hint", async () => {
     const fx = runtime();
 
     const first = await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"));
+    await settled();
     const second = await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/checkout.ts"));
+    const third = await fx.host.emitToolAfter(readIn(SESSION, "/work/web/src/cart.ts"));
     const own = await fx.host.emitToolAfter(readIn(SESSION, "/work/api/src/server.ts"));
 
-    expect(first).toEqual([
+    expect(first).toEqual([]);
+    expect(second).toEqual([
       [
         `waymark · this session's repo is ${API}; this call touched another repo, ${WEB}.`,
         "Ask the user, in your own words, whether both repos belong to one product, so memories saved to the product apply in both.",
         `Record the answer: yes: memory_link with repos ["${API}", "${WEB}"] and product set to the name the user chooses; no: memory_link with the same repos and decline true, and waymark will not ask again.`,
       ].join("\n"),
     ]);
-    expect(second).toEqual([]);
+    expect(third).toEqual([]);
     expect(own).toEqual([]);
   });
 
@@ -103,8 +111,13 @@ describe("working across two repos", () => {
     await fx.host.callTool("memory_link", { repos: [API, WEB], decline: true }, SESSION);
     const next = fx.restart();
     next.host.sessions.set("ses_later", { id: "ses_later", directory: "/work/api" });
+    await next.host.emitToolAfter(readIn("ses_later", "/work/web/src/cart.ts"));
+    await settled();
 
     expect(await next.host.emitToolAfter(readIn("ses_later", "/work/web/src/cart.ts"))).toEqual([]);
+    await next.host.emitToolAfter(readIn(WEB_SESSION, "/work/api/src/server.ts"));
+    await settled();
+
     expect(await next.host.emitToolAfter(readIn(WEB_SESSION, "/work/api/src/server.ts"))).toEqual(
       [],
     );
@@ -113,6 +126,8 @@ describe("working across two repos", () => {
   test("after a Yes the linked repos are not hinted about each other", async () => {
     const fx = runtime();
     await fx.host.callTool("memory_link", { repos: [API, WEB], product: "payments" }, SESSION);
+    await fx.host.emitToolAfter(readIn(WEB_SESSION, "/work/api/src/server.ts"));
+    await settled();
 
     expect(await fx.host.emitToolAfter(readIn(WEB_SESSION, "/work/api/src/server.ts"))).toEqual([]);
   });

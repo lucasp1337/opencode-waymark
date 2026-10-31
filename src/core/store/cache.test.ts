@@ -196,7 +196,7 @@ describe("sync", () => {
     writeAt(files, gone);
     writeAt(files, fixture({ n: 2, title: "Kept" }));
     cache.sync(files);
-    files.remove(gone);
+    files.removeAll(gone.id);
 
     const report = cache.sync(files);
 
@@ -568,12 +568,12 @@ describe("an empty scope chain", () => {
 });
 
 describe("get", () => {
-  test("returns the memory with the path of its file", () => {
+  test("returns the memory with the path and modification time of its file", () => {
     const { cache } = setup();
     const memory = fixture({ n: 1, body: "Wiped at 02:00.\n" });
     cache.put(memory, "/data/a.md", 1);
 
-    expect(cache.get(memory.id)).toEqual({ memory, path: "/data/a.md" });
+    expect(cache.get(memory.id)).toEqual({ memory, path: "/data/a.md", mtimeMs: 1 });
   });
 
   test("returns undefined for an unknown id", () => {

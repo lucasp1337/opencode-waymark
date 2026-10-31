@@ -12,16 +12,25 @@ import { memoryLine } from "../memory-line";
 import { persistMemory } from "../save/persist";
 import { type RelocationDeps, relocated } from "./relocation";
 
-function indexInChain(chain: ScopeChain, scope: ScopeRef): number {
-  return chain.findIndex((other) => scopeKey(other) === scopeKey(scope));
+const USER_SCOPE: ScopeRef = { level: "user" };
+
+// The scopes every session that delivers `scope` is certain to deliver too. A repo has one org
+// and at most one product, known from the session's chain when it is that repo's. An org spans
+// repos with and without a product, and a product spans repos of several orgs, so neither
+// brings along anything narrower or beside it.
+function alwaysAlongside(chain: ScopeChain, scope: ScopeRef): ScopeChain {
+  const isSessionRepo = scope.level === "repo" && chain.some((other) => sameScope(other, scope));
+  return isSessionRepo ? chain : [USER_SCOPE, scope];
+}
+
+function sameScope(a: ScopeRef, b: ScopeRef): boolean {
+  return scopeKey(a) === scopeKey(b);
 }
 
 // Sessions that deliver the replaced memory must also deliver its replacement, or the old one
-// comes back. The user scope is in every session; otherwise the target must be at least as broad
-// as the replaced memory's scope on this chain.
+// comes back.
 function stillHidesReplaced(chain: ScopeChain, target: ScopeRef, replaced: Memory): boolean {
-  const replacedAt = indexInChain(chain, replaced.scope);
-  return target.level === "user" || (replacedAt >= 0 && indexInChain(chain, target) <= replacedAt);
+  return alwaysAlongside(chain, replaced.scope).some((scope) => sameScope(scope, target));
 }
 
 // A replaced memory is hidden only while its replacement is delivered next to it, which a move
@@ -62,7 +71,7 @@ export async function moveMemory(
   if (target === undefined) {
     return `Not moved: this session has no ${request.level} scope; it has ${chain.map(scopeKey).join(", ")}.`;
   }
-  if (scopeKey(target) === scopeKey(memory.scope)) {
+  if (sameScope(target, memory.scope)) {
     return `Not moved: ${memoryLine(memory)} is already in ${scopeKey(target)}.`;
   }
   const replacement = checkReplacement(deps, memory, target, chain);
