@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -99,10 +108,67 @@ export interface ServerHandle {
   stop(): Promise<void>;
 }
 
+// Sandboxes hold thousands of opencode files each; left behind, they pile up in /tmp until boot-time
+// tmpfiles cleanup stalls WSL startup. The name carries the creating pid: the run removes its own at
+// the end (cleanup.ts, preloaded), and each new sandbox first sweeps those of runs that were killed.
+// rmSync unlinks the model-cache and plugin symlinks, not their targets.
+const SANDBOX_PREFIX = "waymark-live-";
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: the process exists but belongs to someone else.
+    return error instanceof Error && "code" in error && error.code === "EPERM";
+  }
+}
+
+const OWNED_SANDBOX = new RegExp(`^${SANDBOX_PREFIX}(\\d+)-`);
+// A name without a pid comes from older harness code, possibly still running in another checkout.
+const LEGACY_SANDBOX_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+type SandboxOwner = { readonly pid: number } | { readonly legacyAgeMs: number };
+
+function ownerOf(path: string, name: string): SandboxOwner {
+  const pid = OWNED_SANDBOX.exec(name)?.[1];
+  return pid === undefined
+    ? { legacyAgeMs: Date.now() - statSync(path).mtimeMs }
+    : { pid: Number(pid) };
+}
+
+function removeSandboxesWhere(shouldRemove: (owner: SandboxOwner) => boolean): void {
+  for (const name of readdirSync(tmpdir())) {
+    if (!name.startsWith(SANDBOX_PREFIX)) {
+      continue;
+    }
+    const path = join(tmpdir(), name);
+    try {
+      if (shouldRemove(ownerOf(path, name))) {
+        rmSync(path, { recursive: true, force: true });
+      }
+    } catch (error) {
+      // Someone else's leftover (another user, another pid namespace) must not fail this run.
+      process.stderr.write(`waymark live: left ${path} in place: ${String(error)}\n`);
+    }
+  }
+}
+
+export function removeOwnSandboxes(): void {
+  removeSandboxesWhere((owner) => "pid" in owner && owner.pid === process.pid);
+}
+
+function removeStaleSandboxes(): void {
+  removeSandboxesWhere((owner) =>
+    "pid" in owner ? !isRunning(owner.pid) : owner.legacyAgeMs > LEGACY_SANDBOX_MAX_AGE_MS,
+  );
+}
+
 // Every run is sandboxed: own config, data, state and cache dirs, so the user's real opencode setup
 // and Waymark log are never read or written.
 export function createLiveEnv(): LiveEnv {
-  const root = mkdtempSync(join(tmpdir(), "waymark-live-"));
+  removeStaleSandboxes();
+  const root = mkdtempSync(join(tmpdir(), `${SANDBOX_PREFIX}${process.pid}-`));
   const dirs = {
     config: join(root, "config"),
     data: join(root, "data"),
