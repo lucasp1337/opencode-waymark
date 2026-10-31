@@ -96,7 +96,7 @@ No other types (`docs:`, `test:`, `refactor:` and so on).
 - **One trunk.** `main` is always releasable. Every change lands through a pull request, and CI (typecheck, lint, tests) must pass first.
 - **Squash merges only.** The pull request title becomes the commit message on `main`, so it follows the commit format above.
 - **Versions are semver on Waymark**, independent of opencode. A break in the memory file format is a major version and ships with a migration note.
-- **Releases are annotated tags** `vX.Y.Z` on `main`, listed in [CHANGELOG.md](CHANGELOG.md).
+- **Releases are annotated tags** `vX.Y.Z` on `main`, listed in [CHANGELOG.md](CHANGELOG.md). To release, bump `version` in `package.json`, date the changelog entry, merge, then push the tag. CI checks that the tag matches the version, runs the checks, publishes to npm with provenance and creates the GitHub release from the changelog.
 - **opencode compatibility** is pinned in `engines.opencode` in `package.json` and in the README table. The `@opencode-ai/plugin` version is bumped only in a pull request that records a live test run against the new opencode.
 - **Maintenance branches on demand.** If a change drops support for an older opencode, first cut `release/<major>.x` from the last compatible tag, then backport fixes with `git cherry-pick -x`.
 
