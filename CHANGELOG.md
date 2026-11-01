@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-01
+
+### Changed
+
+- Sharper save guidance for the agent: save in the same turn when you say "remember" or "from now on", never copy a secret (token, password, key, connection string) into a memory, only where it lives, and keep other people's personal data to a pointer.
+- The embedding model is loaded once per opencode process and shared by every open project, instead of once per project. Three open projects now use about 430 MB instead of about 1 GB.
+- `@huggingface/transformers` updated to 4.3.2.
+
 ## [0.1.0] - 2026-10-31
 
 First release.
@@ -23,5 +31,6 @@ First release.
 - Search by meaning as well as by words, using a small local embedding model (`Xenova/multilingual-e5-small`). Near-duplicates are shown before saving. Falls back to text matching when the model is unavailable.
 - Settings in `config.jsonc` with `lean`, `balanced` and `rich` presets, per-scope token caps, index size and toasts, editable through `/memory setup`.
 
-[Unreleased]: https://github.com/lucasp1337/opencode-waymark/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/lucasp1337/opencode-waymark/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/lucasp1337/opencode-waymark/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/lucasp1337/opencode-waymark/releases/tag/v0.1.0
