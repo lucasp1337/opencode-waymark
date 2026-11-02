@@ -1,27 +1,37 @@
+import { isShownAlways, targetedRepos } from "../../model/delivery";
 import type { MemoryId } from "../../model/id";
 import { isAlwaysOn, KINDS, type Kind } from "../../model/kind";
 import type { Memory } from "../../model/memory";
-import { type ScopeChain, scopeKey } from "../../model/scope";
+import { type ScopeChain, scopeKey, shortRepoName } from "../../model/scope";
 import { type IndexUsage, visibleIndex } from "../lifecycle/index-exit";
 import { appliesLines, datedTitle } from "../memory-line";
 import { alwaysOnText } from "./always-on";
 import { scopesLine } from "./scopes-line";
 
+// What the block says about the session's product: its map line, or the bare member list (empty
+// when the chain has no product or the registry could not be read).
+export type ProductBlock = { readonly map: string } | { readonly members: readonly string[] };
+
 interface BlockInput {
   readonly instructions: string;
   readonly chain: ScopeChain;
-  // The repos linked to the chain's product; empty when it has none.
-  readonly productRepos: readonly string[];
+  readonly product: ProductBlock;
   // Active memories on the chain; superseded ones are already left out.
   readonly memories: readonly Memory[];
   readonly indexLines: number;
   readonly usage: IndexUsage;
 }
 
+// A memory aimed at repos says which, so the agent can tell whose it is without reading it.
+function repoPrefix(memory: Memory): string {
+  const repos = targetedRepos(memory);
+  return repos.length === 0 ? "" : `[${repos.map(shortRepoName).join(", ")}] `;
+}
+
 // appliesLines matters only to the fresh-memories index, where a gotcha can carry howToApply.
 export function indexLine(memory: Memory): string {
   const lines = [
-    `- [${memory.id}] ${datedTitle(memory)}`,
+    `- [${memory.id}] ${repoPrefix(memory)}${datedTitle(memory)}`,
     ...appliesLines(memory).map((line) => `  ${line}`),
   ];
   return lines.join("\n");
@@ -60,13 +70,14 @@ export function renderSessionBlock(input: BlockInput): SessionBlock {
   const keys = new Set(input.chain.map(scopeKey));
   const onChain = input.memories.filter((memory) => keys.has(scopeKey(memory.scope)));
   const alwaysOnKinds = KINDS.filter(isAlwaysOn);
-  const alwaysOn = onChain.filter((memory) => isAlwaysOn(memory.kind));
+  const alwaysOn = onChain.filter(isShownAlways);
   // Cut to the cap after the memories that left the index are gone, then grouped by scope.
   const index = visibleIndex(onChain, input.usage).slice(0, input.indexLines);
   const text = [
     input.instructions,
     "",
-    scopesLine(input.chain, input.productRepos),
+    scopesLine(input.chain, "members" in input.product ? input.product.members : []),
+    ...("map" in input.product ? [input.product.map] : []),
     ...alwaysOnKinds.flatMap((kind) =>
       section(
         `### ${plural(kind)}`,

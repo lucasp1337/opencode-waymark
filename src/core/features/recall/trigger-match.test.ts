@@ -11,6 +11,7 @@ interface Situation {
   paths?: string[];
   command?: string;
   message?: string;
+  repos?: string[];
 }
 
 function matches(triggers: Triggers, situation: Situation = {}): boolean {
@@ -22,7 +23,15 @@ function matches(triggers: Triggers, situation: Situation = {}): boolean {
     appendable: true,
     ...(situation.command === undefined ? {} : { command: situation.command }),
   };
-  return matchesTriggers(triggers, callFacts(call, DIRECTORY, wordsOf(situation.message ?? "")));
+  return matchesTriggers(
+    triggers,
+    callFacts({
+      call,
+      directory: DIRECTORY,
+      words: wordsOf(situation.message ?? ""),
+      repos: situation.repos ?? [],
+    }),
+  );
 }
 
 describe("tool triggers", () => {
@@ -170,5 +179,23 @@ describe("several trigger lists", () => {
 
   test("do not match empty triggers", () => {
     expect(matches({}, { tool: "bash", message: "migration" })).toBe(false);
+  });
+});
+
+describe("repo triggers", () => {
+  test("match a touched repo by id", () => {
+    expect(
+      matches({ repos: ["github.com/acme/customers"] }, { repos: ["github.com/acme/customers"] }),
+    ).toBe(true);
+  });
+
+  test("do not match another repo, nor one whose id merely contains the id", () => {
+    expect(
+      matches({ repos: ["github.com/acme/cust"] }, { repos: ["github.com/acme/customers"] }),
+    ).toBe(false);
+  });
+
+  test("do not match when the call touched no repo", () => {
+    expect(matches({ repos: ["github.com/acme/customers"] })).toBe(false);
   });
 });

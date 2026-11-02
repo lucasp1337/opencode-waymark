@@ -17,6 +17,7 @@ import {
 } from "./memory";
 import { ownField } from "./own-field";
 import { err, ok, type Result } from "./result";
+import { isSafeScopeId } from "./scope";
 import { isWord } from "./words";
 
 export type ContentPatch = Partial<
@@ -68,6 +69,7 @@ const TRIGGER_ENTRY: { readonly [F in TriggerField]: (entry: string) => boolean 
   commands: (entry) => !LINE_BREAK.test(entry),
   tools: (entry) => !WHITESPACE.test(entry),
   keywords: isWord,
+  repos: isSafeScopeId,
 };
 
 function isTriggerField(key: string): key is TriggerField {

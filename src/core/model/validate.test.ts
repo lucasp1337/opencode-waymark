@@ -119,7 +119,7 @@ describe("parseContent", () => {
 
   test("requires triggers for gotchas", () => {
     expect(problems({ ...fact, kind: "gotcha" })).toEqual([
-      "gotcha needs triggers (paths, commands, tools, keywords)",
+      "gotcha needs triggers (paths, commands, tools, keywords, repos)",
     ]);
   });
 
@@ -200,6 +200,18 @@ describe("parseContent", () => {
 describe("triggers", () => {
   const gotcha = (triggers: unknown) => problems({ ...fact, kind: "gotcha", triggers });
 
+  test("accepts repo ids and refuses entries that are not ids", () => {
+    const ok = parseContent({ ...fact, triggers: { repos: ["github.com/acme/web"] } });
+    const bad = parseContent({ ...fact, triggers: { repos: ["not an id"] } });
+
+    expect(ok.ok).toBe(true);
+    expect(bad.ok).toBe(false);
+  });
+
+  test("refuses an empty repos list, so a memory never carries one", () => {
+    expect(parseContent({ ...fact, triggers: { repos: [] } }).ok).toBe(false);
+  });
+
   test("trims entries and keeps only the lists given", () => {
     const result = parseContent({
       ...fact,
@@ -214,12 +226,12 @@ describe("triggers", () => {
   });
 
   test("needs at least one list", () => {
-    expect(gotcha({})).toEqual(["triggers needs one of paths, commands, tools, keywords"]);
+    expect(gotcha({})).toEqual(["triggers needs one of paths, commands, tools, keywords, repos"]);
   });
 
   test("rejects a key that is not a trigger list", () => {
     expect(gotcha({ paths: ["a"], tool: ["x"] })).toEqual([
-      "triggers.tool is not one of paths, commands, tools, keywords",
+      "triggers.tool is not one of paths, commands, tools, keywords, repos",
     ]);
   });
 
@@ -281,7 +293,7 @@ describe("parsePatch", () => {
       ok: false,
       error: [
         "title must be a non-empty string",
-        "triggers needs one of paths, commands, tools, keywords",
+        "triggers needs one of paths, commands, tools, keywords, repos",
       ],
     });
   });

@@ -9,6 +9,8 @@ export interface CallFacts {
   readonly paths: readonly string[];
   readonly command?: string;
   readonly words: ReadonlySet<string>;
+  // Ids of the repos whose work trees the call touched.
+  readonly repos: readonly string[];
 }
 
 // Only a path inside the directory gets a relative form; "../x" is not a path a glob can mean.
@@ -21,15 +23,19 @@ function pathForms(directory: string, path: string): string[] {
   return leavesDirectory || inside === "" ? [path] : [path, inside];
 }
 
-export function callFacts(
-  call: ToolCallInfo,
-  directory: string,
-  words: ReadonlySet<string>,
-): CallFacts {
+interface CallContext {
+  readonly call: ToolCallInfo;
+  readonly directory: string;
+  readonly words: ReadonlySet<string>;
+  readonly repos: readonly string[];
+}
+
+export function callFacts({ call, directory, words, repos }: CallContext): CallFacts {
   return {
     tool: call.tool,
     paths: call.touchedPaths.flatMap((path) => pathForms(directory, path)),
     words,
+    repos,
     ...(call.command === undefined ? {} : { command: call.command }),
   };
 }
@@ -49,6 +55,7 @@ const MATCHERS: {
   },
   tools: (names, facts) => names.includes(facts.tool),
   keywords: (keywords, facts) => keywords.some((keyword) => facts.words.has(normalWord(keyword))),
+  repos: (ids, facts) => ids.some((id) => facts.repos.includes(id)),
 };
 
 export function matchesTriggers(triggers: Triggers, facts: CallFacts): boolean {

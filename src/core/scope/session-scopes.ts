@@ -9,8 +9,16 @@ import { productOf } from "./products";
 import { type OrgEntry, type OrgRef, resolveOrg } from "./registry";
 import { catchRegistryIo, catchRegistryIoAsync } from "./registry-file";
 
+interface SessionResolution {
+  readonly chain: ScopeChain;
+  readonly root: string | undefined;
+}
+
 export interface SessionScopes {
   chainFor(sessionID: string): Promise<ScopeChain>;
+  // The chain together with the root of the session's work tree (undefined outside a git
+  // repository), from a single resolution.
+  resolveSession(sessionID: string): Promise<SessionResolution>;
 }
 
 interface SessionScopeDeps {
@@ -98,18 +106,25 @@ async function withRegistry(deps: SessionScopeDeps, resolved: ResolvedScopes): P
 // plugin is active.
 export function createSessionScopes(deps: SessionScopeDeps): SessionScopes {
   const resolutions = new Map<string, ResolvedScopes>();
+  async function resolutionOf(sessionID: string): Promise<ResolvedScopes> {
+    const { directory } = await deps.host.sessionMeta(sessionID);
+    const known = resolutions.get(directory);
+    if (known !== undefined) {
+      return known;
+    }
+    const { resolved, cacheable } = resolveFor(deps, directory);
+    if (cacheable) {
+      resolutions.set(directory, resolved);
+    }
+    return resolved;
+  }
   return {
     async chainFor(sessionID) {
-      const { directory } = await deps.host.sessionMeta(sessionID);
-      const known = resolutions.get(directory);
-      if (known !== undefined) {
-        return await withRegistry(deps, known);
-      }
-      const { resolved, cacheable } = resolveFor(deps, directory);
-      if (cacheable) {
-        resolutions.set(directory, resolved);
-      }
-      return await withRegistry(deps, resolved);
+      return await withRegistry(deps, await resolutionOf(sessionID));
+    },
+    async resolveSession(sessionID) {
+      const resolved = await resolutionOf(sessionID);
+      return { chain: await withRegistry(deps, resolved), root: resolved.root };
     },
   };
 }

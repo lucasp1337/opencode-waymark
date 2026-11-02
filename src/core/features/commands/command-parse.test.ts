@@ -13,6 +13,25 @@ describe("parseMemoryCommand", () => {
     expect(parseMemoryCommand("review")).toEqual({ ok: true, value: { name: "review" } });
   });
 
+  test("triggers without a field covers every field", () => {
+    expect(parseMemoryCommand("triggers")).toEqual({ ok: true, value: { name: "triggers" } });
+  });
+
+  test("triggers takes one trigger field", () => {
+    expect(parseMemoryCommand("triggers repos")).toEqual({
+      ok: true,
+      value: { name: "triggers", field: "repos" },
+    });
+  });
+
+  test.each(["triggers colour", "triggers paths repos"])("%j is refused with the usage", (args) => {
+    const result = parseMemoryCommand(args);
+
+    expect(!result.ok && result.error).toBe(
+      "Expected /memory triggers [paths|commands|tools|keywords|repos].",
+    );
+  });
+
   test("words are split on any whitespace", () => {
     expect(parseMemoryCommand(`  move\t${ID}\n repo `)).toEqual({
       ok: true,

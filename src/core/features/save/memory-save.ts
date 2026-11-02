@@ -18,6 +18,7 @@ import { SAVE_SKILL } from "../save-skill";
 import type { ToolDeps } from "../tool-deps";
 import { persistMemory } from "./persist";
 import { parseRelation, type Relation } from "./relation";
+import { checkRepoTargets } from "./repo-targets";
 
 const RELATED_LIMIT = 3;
 
@@ -112,6 +113,10 @@ async function save(deps: ToolDeps, input: unknown, sessionID: string): Promise<
   if (target === undefined) {
     const available = chain.map(scopeKey).join(", ");
     return `Not saved: this session has no ${request.value.level} scope; it has ${available}.`;
+  }
+  const targets = checkRepoTargets(deps, target, request.value.content.triggers);
+  if (!targets.ok) {
+    return `Not saved: ${targets.error}.`;
   }
   const related =
     request.value.relation === undefined ? await relatedTo(deps, request.value.content, chain) : [];

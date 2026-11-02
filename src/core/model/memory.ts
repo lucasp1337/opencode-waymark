@@ -3,12 +3,12 @@ import type { Kind } from "./kind";
 import type { Locator } from "./locator";
 import type { ScopeRef } from "./scope";
 
-export const TRIGGER_FIELDS = ["paths", "commands", "tools", "keywords"] as const;
+export const TRIGGER_FIELDS = ["paths", "commands", "tools", "keywords", "repos"] as const;
 
 export type TriggerField = (typeof TRIGGER_FIELDS)[number];
 
 // paths: globs on touched paths; commands: shell command prefixes; tools: exact tool names;
-// keywords: whole words in the user's message.
+// keywords: whole words in the user's message; repos: repo ids whose work tree a call touches.
 export type Triggers = { readonly [F in TriggerField]?: readonly string[] };
 
 // What the agent writes; everything else is assigned by Waymark.

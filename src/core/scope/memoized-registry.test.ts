@@ -31,6 +31,7 @@ function fakeFiles(initial: string | undefined) {
     listFiles: () => [],
     realPath: () => undefined,
     isDirectory: () => false,
+    exists: () => Promise.resolve(false),
   };
   return { fs, state };
 }

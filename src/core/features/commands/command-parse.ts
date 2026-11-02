@@ -1,4 +1,5 @@
 import { isMemoryId, type MemoryId } from "../../model/id";
+import { TRIGGER_FIELDS, type TriggerField } from "../../model/memory";
 import { err, ok, type Result } from "../../model/result";
 import { isScopeLevel, SCOPE_LEVELS, type ScopeLevel } from "../../model/scope";
 import { productNameOf } from "../../scope/products";
@@ -7,6 +8,7 @@ import type { OrgMerge } from "../../scope/registry";
 export type MemoryCommand =
   | { readonly name: "list" }
   | { readonly name: "review" }
+  | { readonly name: "triggers"; readonly field?: TriggerField }
   | { readonly name: "move"; readonly id: MemoryId; readonly level: ScopeLevel }
   | { readonly name: "org-merge"; readonly merge: OrgMerge }
   | { readonly name: "link"; readonly product: string }
@@ -14,12 +16,14 @@ export type MemoryCommand =
 
 const MOVE_USAGE = `/memory move <id> <${SCOPE_LEVELS.join("|")}>`;
 const MERGE_USAGE = "/memory org merge <org to keep> <org to merge into it>";
+const TRIGGERS_USAGE = `/memory triggers [${TRIGGER_FIELDS.join("|")}]`;
 const LINK_USAGE = "/memory link <product>";
 
 const USAGE = [
   "Subcommands of /memory:",
   "- /memory: list the memories of this session's scopes",
   "- /memory review: memories that need the user's attention",
+  `- ${TRIGGERS_USAGE}: the memories that fire on a trigger, by field and value; repos is the map of the product`,
   `- ${MOVE_USAGE}: move a memory to another scope of this session`,
   `- ${MERGE_USAGE}: merge the second org (host/owner) into the first`,
   `- ${LINK_USAGE}: link this session's repo to a product, created if new; its memories apply in every linked repo`,
@@ -49,6 +53,17 @@ function parseOrgMerge(words: readonly string[]): Result<MemoryCommand, string> 
   return err(`Not merged: expected ${MERGE_USAGE}.`);
 }
 
+function parseTriggers(words: readonly string[]): Result<MemoryCommand, string> {
+  const [field, ...extra] = words;
+  if (field === undefined) {
+    return ok({ name: "triggers" });
+  }
+  const known = TRIGGER_FIELDS.find((candidate) => candidate === field);
+  return known !== undefined && extra.length === 0
+    ? ok({ name: "triggers", field: known })
+    : err(`Expected ${TRIGGERS_USAGE}.`);
+}
+
 function parseLink(words: readonly string[]): Result<MemoryCommand, string> {
   const [typed, ...extra] = words;
   const product = typed === undefined ? undefined : productNameOf(typed);
@@ -66,6 +81,8 @@ export function parseMemoryCommand(args: string): Result<MemoryCommand, string> 
       return ok({ name: "list" });
     case "review":
       return words.length === 0 ? ok({ name: "review" }) : err(USAGE);
+    case "triggers":
+      return parseTriggers(words);
     case "move":
       return parseMove(words);
     case "org":

@@ -3,10 +3,12 @@ import { memoryId } from "../../../../test/memory-id";
 import { type ContentInput, validContent } from "../../../../test/valid-content";
 import type { MemoryId } from "../../model/id";
 import { type Memory, newMemory, type Triggers } from "../../model/memory";
+import { err, ok, type Result } from "../../model/result";
 import { type ScopeChain, type ScopeRef, scopeKey } from "../../model/scope";
 import type { ToolCallInfo } from "../../port";
 import type { Telemetry } from "../../telemetry/telemetry";
 import type { NoisyThresholds } from "../lifecycle/lifecycle-settings";
+import type { SeenRepo } from "../link/repo-watch";
 import { type Baseline, baselineOf } from "./fresh-memories";
 import { createJit } from "./jit";
 import type { RecallScope } from "./recall-scope";
@@ -72,6 +74,15 @@ interface Setup {
   firesBefore?: number;
   // Memories the session wrote itself.
   isOwn?: (sessionID: string, memory: Memory) => boolean;
+  // Ids of the repos every call is seen to touch.
+  touchedRepos?: readonly string[];
+  observe?: () => SeenRepo[];
+  // The product membership the registry reports; by default the touched repos are all members.
+  productRepos?: (product: string) => Result<readonly string[], string>;
+}
+
+function touched(repos: readonly string[] = []): SeenRepo[] {
+  return repos.map((repo) => ({ repo, root: `/work/${repo}` }));
 }
 
 function jitWith(memories: readonly Memory[], setup: Setup = {}) {
@@ -90,6 +101,11 @@ function jitWith(memories: readonly Memory[], setup: Setup = {}) {
     },
     baseline: () => setup.baseline,
     ownWrites: { isOwn: setup.isOwn ?? (() => false) },
+    repoWatch: {
+      observe: setup.observe ?? (() => touched(setup.touchedRepos)),
+      forget: () => undefined,
+    },
+    productRepos: setup.productRepos ?? (() => ok(setup.touchedRepos ?? [])),
     store: {
       inScopes: (chain) => {
         reads.count += 1;
@@ -435,6 +451,8 @@ describe("JIT for a session that gets no recall", () => {
       currentChain: () => Promise.resolve(SESSION_SCOPE.chain),
       baseline: () => undefined,
       ownWrites: { isOwn: () => false },
+      repoWatch: { observe: () => [], forget: () => undefined },
+      productRepos: () => ok([]),
       store: { inScopes: (chain) => onChain([ON_BASH], chain), generation: () => 0 },
       counters: fakeCounters().counters,
       noisy: NOISY,
@@ -796,5 +814,150 @@ describe("JIT memories saved after the session block was frozen", () => {
 
     expect(text).toContain("Pushes are protected");
     expect(text).toContain("Short answers");
+  });
+});
+
+describe("JIT repo triggers", () => {
+  const CUSTOMERS = "github.com/acme/customers";
+  const PRODUCT: ScopeRef = { level: "product", id: "payments" };
+  const CHAIN: ScopeChain = [USER, PRODUCT, REPO];
+  const SCOPE: RecallScope = { chain: CHAIN, directory: "/work/api" };
+
+  function aimed(kind: "fact" | "decision" | "rule" | "gotcha", repos: string[]): Memory {
+    const content: ContentInput = {
+      kind,
+      title: `${kind} for customers`,
+      body: "Customers owns the PII.",
+      triggers: { repos },
+      ...(kind === "rule" || kind === "decision" ? { why: "boundary" } : {}),
+    };
+    return stored(10, content, { scope: PRODUCT });
+  }
+
+  test("delivers a decision in full when a call touches the repo it targets", async () => {
+    const { jit } = jitWith([aimed("decision", [CUSTOMERS])], {
+      scope: SCOPE,
+      touchedRepos: [CUSTOMERS],
+    });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toContain("Customers owns the PII.");
+  });
+
+  test("delivers a fact aimed at the repo once per session", async () => {
+    const { jit } = jitWith([aimed("fact", [CUSTOMERS])], {
+      scope: SCOPE,
+      touchedRepos: [CUSTOMERS],
+    });
+    await jit.onToolAfter(toolCall({ tool: "read" }));
+
+    expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBeNull();
+  });
+
+  test("delivers nothing when the call touches another repo", async () => {
+    const { jit } = jitWith([aimed("decision", [CUSTOMERS])], {
+      scope: SCOPE,
+      touchedRepos: ["github.com/acme/billing"],
+    });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBeNull();
+  });
+
+  test("delivers a rule or a gotcha aimed at the repo, whatever its kind", async () => {
+    for (const kind of ["rule", "gotcha"] as const) {
+      const { jit } = jitWith([aimed(kind, [CUSTOMERS])], {
+        scope: SCOPE,
+        touchedRepos: [CUSTOMERS],
+      });
+
+      expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toContain(
+        "Customers owns the PII.",
+      );
+    }
+  });
+
+  test("stops firing once the repo has left the product, the memory staying with the product", async () => {
+    const { jit } = jitWith([aimed("decision", [CUSTOMERS])], {
+      scope: SCOPE,
+      touchedRepos: [CUSTOMERS],
+      productRepos: () => ok(["github.com/acme/api"]),
+    });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBeNull();
+  });
+
+  test("an unlinked repo's memory still fires on its other triggers", async () => {
+    const memory = stored(
+      11,
+      {
+        kind: "gotcha",
+        title: "Reads are slow",
+        body: "Body.",
+        triggers: { repos: [CUSTOMERS], tools: ["read"] },
+      },
+      { scope: PRODUCT },
+    );
+    const { jit } = jitWith([memory], {
+      scope: SCOPE,
+      touchedRepos: [CUSTOMERS],
+      productRepos: () => ok([]),
+    });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toContain("Reads are slow");
+  });
+
+  test("does not fire, and logs, when the product's repos cannot be read", async () => {
+    const { jit, logged } = jitWith([aimed("decision", [CUSTOMERS])], {
+      scope: SCOPE,
+      touchedRepos: [CUSTOMERS],
+      productRepos: () => err("bad json"),
+    });
+
+    expect(await jit.onToolAfter(toolCall({ tool: "read" }))).toBeNull();
+    expect(logged).toContain("product repos not read for a repo trigger");
+  });
+
+  test("reports an unreadable registry once, however many calls meet it", async () => {
+    const { jit, logged } = jitWith([aimed("decision", [CUSTOMERS])], {
+      scope: SCOPE,
+      touchedRepos: [CUSTOMERS],
+      productRepos: () => err("bad json"),
+    });
+
+    await jit.onToolAfter(toolCall({ tool: "read" }));
+    await jit.onToolAfter(toolCall({ tool: "read" }));
+
+    expect(
+      logged.filter((msg) => msg === "product repos not read for a repo trigger"),
+    ).toHaveLength(1);
+  });
+
+  test("does not read the registry when the call touched none of the targeted repos", async () => {
+    let reads = 0;
+    const { jit } = jitWith([aimed("decision", [CUSTOMERS])], {
+      scope: SCOPE,
+      touchedRepos: ["github.com/acme/api"],
+      productRepos: () => {
+        reads += 1;
+        return ok([]);
+      },
+    });
+
+    await jit.onToolAfter(toolCall({ tool: "read" }));
+
+    expect(reads).toBe(0);
+  });
+
+  test("does not watch repos for a session outside a product", async () => {
+    let watched = 0;
+    const { jit } = jitWith([ON_BASH], {
+      observe: () => {
+        watched += 1;
+        return [];
+      },
+    });
+
+    await jit.onToolAfter(toolCall({ tool: "bash" }));
+
+    expect(watched).toBe(0);
   });
 });

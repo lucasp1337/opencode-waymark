@@ -1,5 +1,5 @@
+import { isListedInIndex, isShownAlways } from "../../model/delivery";
 import type { MemoryId } from "../../model/id";
-import { isAlwaysOn, isIndexed } from "../../model/kind";
 import type { Memory } from "../../model/memory";
 import { alwaysOnText } from "./always-on";
 import { indexLine } from "./session-block";
@@ -9,7 +9,7 @@ import { indexLine } from "./session-block";
 export type Baseline = ReadonlyMap<MemoryId, string>;
 
 function reachesSessionBlock(memory: Memory): boolean {
-  return isAlwaysOn(memory.kind) || isIndexed(memory.kind);
+  return isShownAlways(memory) || isListedInIndex(memory);
 }
 
 export function baselineOf(memories: readonly Memory[]): Baseline {
@@ -48,7 +48,7 @@ export function queueFresh(
 }
 
 function freshText(memory: Memory): string {
-  return isAlwaysOn(memory.kind)
+  return isShownAlways(memory)
     ? `waymark · new ${memory.kind}\n${alwaysOnText(memory)}`
     : `waymark · new ${memory.kind} (memory_read for the full text)\n${indexLine(memory)}`;
 }

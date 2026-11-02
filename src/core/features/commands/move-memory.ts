@@ -10,6 +10,8 @@ import {
 } from "../../model/scope";
 import { memoryLine } from "../memory-line";
 import { persistMemory } from "../save/persist";
+import { checkRepoTargets } from "../save/repo-targets";
+import type { ToolDeps } from "../tool-deps";
 import { type RelocationDeps, relocated } from "./relocation";
 
 const USER_SCOPE: ScopeRef = { level: "user" };
@@ -59,7 +61,7 @@ function checkReplacement(
 }
 
 export async function moveMemory(
-  deps: RelocationDeps,
+  deps: RelocationDeps & Pick<ToolDeps, "productRepos">,
   request: { readonly id: MemoryId; readonly level: ScopeLevel },
   chain: ScopeChain,
 ): Promise<string> {
@@ -73,6 +75,13 @@ export async function moveMemory(
   }
   if (sameScope(target, memory.scope)) {
     return `Not moved: ${memoryLine(memory)} is already in ${scopeKey(target)}.`;
+  }
+  const targets = checkRepoTargets(deps, target, memory.triggers);
+  if (!targets.ok) {
+    // Only leaving the product is fixed by editing the memory; a product without the repos is not.
+    const remedy =
+      target.level === "product" ? "" : "; remove triggers.repos with memory_update first";
+    return `Not moved: ${targets.error}${remedy}.`;
   }
   const replacement = checkReplacement(deps, memory, target, chain);
   if (!replacement.ok) {

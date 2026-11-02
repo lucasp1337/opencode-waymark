@@ -4,11 +4,15 @@ import { join } from "node:path";
 import { createFakeHost } from "../../../../test/fake-host";
 import { fakeRepos } from "../../../../test/fake-repos";
 import { useTempDirs } from "../../../../test/temp-dir";
+import { ok } from "../../model/result";
 import type { ToolCallInfo } from "../../port";
 import { declinePair, linkRepos } from "../../scope/products";
 import { type FileSystem, nodeFileSystem } from "../../store/fs";
 import type { RecallScope } from "../recall/recall-scope";
+import { createRepoIds } from "./repo-ids";
+import { createRepoWatch } from "./repo-watch";
 import { createSecondRepoHints } from "./second-repo";
+import { createTouchedRoots } from "./touched-repos";
 
 const tempDir = useTempDirs();
 
@@ -49,6 +53,8 @@ interface SetupOptions {
   readonly rejecting?: boolean;
   readonly fs?: Partial<FileSystem>;
   readonly registry?: string;
+  // The checkout recorder never finishes, as when another process holds the registry lock.
+  readonly lockHeld?: boolean;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -59,14 +65,26 @@ function setup(options: SetupOptions = {}) {
     ...(options.rejecting && { rejecting: options.rejecting }),
   });
   const scope = options.scope === undefined ? SESSION_SCOPE : options.scope;
+  const checkouts: string[][] = [];
+  const fs = { ...repos.fs, ...options.fs };
+  const repoWatch = createRepoWatch({
+    repoIds: createRepoIds({ originUrl: repos.originUrl, log: host.log }),
+    touchedRoots: createTouchedRoots({ fs, log: host.log }),
+  });
   const hints = createSecondRepoHints({
     recallScope: () => Promise.resolve(scope),
-    originUrl: repos.originUrl,
-    fs: { ...repos.fs, ...options.fs },
+    repoWatch,
+    store: { inScopes: () => [] },
+    productRepos: () => ok([]),
+    fs,
     registryFile: options.registry ?? registryFile(),
+    recordCheckout: (repo, root) => {
+      checkouts.push([repo, root]);
+      return options.lockHeld === true ? new Promise<void>(() => undefined) : Promise.resolve();
+    },
     log: host.log,
   });
-  return { hints, repos, logs: host.logs };
+  return { hints, repos, logs: host.logs, checkouts };
 }
 
 function call(
@@ -139,6 +157,42 @@ describe("second repo hint", () => {
     hints.forget(SESSION);
 
     expect(await touching(hints, ["/work/web/src/main.ts"])).toContain(touchedRepoLine(WEB));
+  });
+
+  test("records the work tree of a touched repo, other or own, once it is identified", async () => {
+    const { hints, checkouts } = setup();
+
+    await touching(hints, ["/work/web/src/main.ts", "/work/api/src/main.ts"]);
+
+    expect(checkouts).toEqual(
+      expect.arrayContaining([
+        [WEB, "/work/web"],
+        [API, "/work/api"],
+      ]),
+    );
+    expect(checkouts).toHaveLength(2);
+  });
+
+  test("a call is not held up by a checkout record waiting for the registry lock", async () => {
+    const { hints } = setup({ lockHeld: true });
+
+    expect(await touching(hints, ["/work/web/src/main.ts"])).toContain(touchedRepoLine(WEB));
+  });
+
+  test("records a touched repo even when the call cannot carry a hint", async () => {
+    const { hints, checkouts } = setup();
+
+    await touching(hints, ["/work/web/src/main.ts"], { appendable: false });
+
+    expect(checkouts).toEqual([[WEB, "/work/web"]]);
+  });
+
+  test("records nothing for a root whose repo could not be identified", async () => {
+    const { hints, checkouts } = setup({ broken: ["/work/web"] });
+
+    await touching(hints, ["/work/web/src/main.ts"]);
+
+    expect(checkouts).toEqual([]);
   });
 
   test("paths in the session's own repo add nothing", async () => {

@@ -1,4 +1,4 @@
-import { isIndexed } from "../../model/kind";
+import { isListedInIndex } from "../../model/delivery";
 import { activeOnly } from "../../model/memory";
 import type { ScopeChain } from "../../model/scope";
 import type { MemoryStore } from "../../store/memory-store";
@@ -22,7 +22,7 @@ interface ReviewSignalDeps {
 export function createReviewSignals(deps: ReviewSignalDeps): (chain: ScopeChain) => ReviewSignals {
   return (chain) => {
     const memories = activeOnly(deps.store.inScopes(chain));
-    const indexed = memories.filter((memory) => isIndexed(memory.kind));
+    const indexed = memories.filter((memory) => isListedInIndex(memory));
     const usage = {
       stats: deps.counters.stats(indexed.map((memory) => memory.id)),
       now: deps.now(),

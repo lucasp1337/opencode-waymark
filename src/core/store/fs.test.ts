@@ -183,4 +183,27 @@ describe("nodeFileSystem", () => {
 
     expect(() => fs.isDirectory(loop)).toThrow();
   });
+
+  test("exists is true for a file and for a directory", async () => {
+    const dir = tempDir();
+    writeFileSync(join(dir, "f.txt"), "");
+
+    expect(await fs.exists(join(dir, "f.txt"))).toBe(true);
+    expect(await fs.exists(dir)).toBe(true);
+  });
+
+  test("exists is false for a path that does not exist and for one below a file", async () => {
+    const file = join(tempDir(), "f.txt");
+    writeFileSync(file, "");
+
+    expect(await fs.exists(join(tempDir(), "missing"))).toBe(false);
+    expect(await fs.exists(join(file, "x"))).toBe(false);
+  });
+
+  test("exists rejects for errors other than a missing path", async () => {
+    const loop = join(tempDir(), "loop");
+    symlinkSync(loop, loop);
+
+    await expect(fs.exists(loop)).rejects.toThrow();
+  });
 });

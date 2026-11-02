@@ -1,4 +1,4 @@
-import { isAlwaysOn } from "../../model/kind";
+import { isShownAlways } from "../../model/delivery";
 import type { Memory } from "../../model/memory";
 import { err, ok, type Result } from "../../model/result";
 import { type ScopeLevel, scopeKey } from "../../model/scope";
@@ -27,13 +27,13 @@ export function checkBudget(
   active: readonly Memory[],
   caps: BudgetCaps,
 ): Result<void, BudgetRefusal> {
-  if (!isAlwaysOn(memory.kind)) {
+  if (!isShownAlways(memory)) {
     return ok(undefined);
   }
   const key = scopeKey(memory.scope);
   const current = active.filter(
     (other) =>
-      isAlwaysOn(other.kind) &&
+      isShownAlways(other) &&
       scopeKey(other.scope) === key &&
       other.id !== memory.id &&
       other.id !== memory.supersedes,

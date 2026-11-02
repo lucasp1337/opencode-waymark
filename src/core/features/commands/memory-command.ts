@@ -9,9 +9,11 @@ import { listChain } from "./list-chain";
 import { type MergeDeps, mergeOrgs } from "./merge-orgs";
 import { moveMemory } from "./move-memory";
 import { type ReviewSignals, reviewReport } from "./review-report";
+import { triggersReport } from "./triggers-report";
 
-export interface MemoryCommandDeps extends MergeDeps, Pick<ToolDeps, "scopes"> {
+export interface MemoryCommandDeps extends MergeDeps, Pick<ToolDeps, "scopes" | "productRepos"> {
   readonly reviewSignals: (chain: ScopeChain) => ReviewSignals;
+  readonly home: string;
 }
 
 const INPUT_SCHEMA: JsonSchemaObject = {
@@ -45,7 +47,9 @@ async function runCommand(
     case "list":
       return listChain(deps, chain);
     case "review":
-      return reviewReport(deps.store, chain, deps.reviewSignals(chain));
+      return reviewReport(deps, chain, deps.reviewSignals(chain));
+    case "triggers":
+      return await triggersReport(deps, chain, command.field);
     case "move":
       return await moveMemory(deps, command, chain);
     case "link":
@@ -72,7 +76,7 @@ export function memoryCommandTool(deps: MemoryCommandDeps): ToolDef {
   return {
     name: "memory_command",
     description:
-      "Runs a /memory subcommand: list the memories of this session's scopes, review, move a memory to another scope, merge two orgs, or link this session's repo to a product and unlink it. Pass the user's arguments exactly as typed. Call only when the user ran /memory.",
+      "Runs a /memory subcommand: list the memories of this session's scopes, review, show triggers (the memories that fire on a path, command, tool, keyword or repo; triggers repos is the map of the product), move a memory to another scope, merge two orgs, or link this session's repo to a product and unlink it. Pass the user's arguments exactly as typed. Call only when the user ran /memory.",
     inputSchema: INPUT_SCHEMA,
     execute: (input, ctx) => commandReply(deps, input, ctx.sessionID),
   };

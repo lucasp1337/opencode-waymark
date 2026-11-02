@@ -69,7 +69,7 @@ export const CONTENT_PROPERTIES = {
   },
   triggers: {
     type: "object",
-    description: `Required for ${kindsNeeding("triggers")}. paths: globs of touched files; commands: shell command prefixes; tools: tool names; keywords: single words from the user's message`,
+    description: `Required for ${kindsNeeding("triggers")}. paths: globs of touched files; commands: shell command prefixes; tools: tool names; keywords: single words from the user's message; repos: ids of repos of this product (product scope only), fired when a call touches that repo`,
     properties: Object.fromEntries(TRIGGER_FIELDS.map((field) => [field, TRIGGER_LIST])),
   },
 } as const;

@@ -108,6 +108,7 @@ function start(activation: Activation): RuntimeFixture {
   const { dataDir, clock, newId } = activation;
   const runtime = createRuntime(host, {
     dataDir,
+    home: "/home/user",
     skillsDir: activation.setup.skillsDir ?? SHIPPED_SKILLS,
     fs: repos.fs,
     git: fakeGit,

@@ -1,4 +1,4 @@
-import { isAlwaysOn } from "../../model/kind";
+import { isShownAlways } from "../../model/delivery";
 import { activeOnly, type Memory } from "../../model/memory";
 import { err, ok, type Result } from "../../model/result";
 import type { ScopeRef } from "../../model/scope";
@@ -30,7 +30,7 @@ export function checkArrivals(
 ): Result<void, ArrivalRefusal> {
   const present = deps.store.inScopes([target]);
   const delivered = new Set(activeOnly([...present, ...arriving]).map((memory) => memory.id));
-  const counted = arriving.filter((memory) => delivered.has(memory.id) && isAlwaysOn(memory.kind));
+  const counted = arriving.filter((memory) => delivered.has(memory.id) && isShownAlways(memory));
   const accepted = [...present];
   for (const memory of counted) {
     const arrived = { ...memory, scope: target };

@@ -1,4 +1,5 @@
 import type { MemoryId } from "../model/id";
+import type { Result } from "../model/result";
 import type { HostPort } from "../port";
 import type { SessionScopes } from "../scope/session-scopes";
 import type { MemoryStore } from "../store/memory-store";
@@ -15,4 +16,6 @@ export interface ToolDeps {
   // Read per save, so a changed setting applies without a restart.
   readonly caps: () => BudgetCaps;
   readonly retriever: Retriever;
+  // The repo ids linked to a product, from the registry; an error is the reason it was unreadable.
+  productRepos(product: string): Result<readonly string[], string>;
 }

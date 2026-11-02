@@ -26,6 +26,11 @@ export function isSafeScopeId(id: string): boolean {
     .every((segment) => SAFE_SEGMENT.test(segment) && segment !== "." && segment !== "..");
 }
 
+// The last segment of a repo id, for lines where the full id would crowd out the content.
+export function shortRepoName(repo: string): string {
+  return repo.slice(repo.lastIndexOf("/") + 1);
+}
+
 // Stable text form, used in frontmatter, the cache and messages: "user" or "<level>:<id>".
 export function scopeKey(scope: ScopeRef): string {
   return scope.level === "user" ? "user" : `${scope.level}:${scope.id}`;

@@ -1,5 +1,6 @@
-import type { ScopeChain } from "../../model/scope";
+import { repoIdIn, type ScopeChain } from "../../model/scope";
 import type { HostPort, SessionMeta } from "../../port";
+import type { CheckoutRecorder } from "../../scope/checkouts";
 import type { SessionScopes } from "../../scope/session-scopes";
 
 export interface RecallScope {
@@ -18,6 +19,7 @@ export function receivesRecall(meta: SessionMeta, subagents: readonly string[]):
 interface RecallScopeDeps {
   readonly host: Pick<HostPort, "sessionMeta">;
   readonly scopes: SessionScopes;
+  readonly recordCheckout: CheckoutRecorder;
   // Read when a session is first seen, so a changed setting applies to the next session.
   readonly subagents: () => readonly string[];
 }
@@ -27,7 +29,14 @@ async function resolve(deps: RecallScopeDeps, sessionID: string): Promise<Recall
   if (!receivesRecall(meta, deps.subagents())) {
     return null;
   }
-  return { chain: await deps.scopes.chainFor(sessionID), directory: meta.directory };
+  const { chain, root } = await deps.scopes.resolveSession(sessionID);
+  const repo = repoIdIn(chain);
+  if (repo !== undefined && root !== undefined) {
+    // Not awaited: the recorder logs its own failures and may wait for the registry lock. Once per
+    // session, since a session's recall scope is decided once.
+    void deps.recordCheckout(repo, root);
+  }
+  return { chain, directory: meta.directory };
 }
 
 // Decided once per session: null means the session gets no recall at all.

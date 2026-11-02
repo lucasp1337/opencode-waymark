@@ -45,6 +45,7 @@ describe("resolveScopes", () => {
         { level: "repo", id: "github.com/acme/api" },
       ],
       org: { id: "github.com/acme", owner: "acme" },
+      root: "/work/api",
     });
   });
 
@@ -55,6 +56,14 @@ describe("resolveScopes", () => {
       id: "gitlab.com/group/sub",
       owner: "group/sub",
     });
+  });
+
+  test("reports the work tree root git found", () => {
+    expect(resolveScopes("/work/api/src", gitWith(found("/work/api"))).root).toBe("/work/api");
+  });
+
+  test("reports no root outside a repository", () => {
+    expect(resolveScopes("/tmp/notes", gitWith(ABSENT)).root).toBeUndefined();
   });
 
   test("the origin is read from the repository root, not from the given directory", () => {
@@ -72,6 +81,7 @@ describe("resolveScopes", () => {
   test("a repository without an origin gets a local repo scope and no org or note", () => {
     expect(resolveScopes("/work/scratch", gitWith(found("/work/scratch")))).toStrictEqual({
       chain: [{ level: "user" }, { level: "repo", id: "local/bc7e00170321a9c9" }],
+      root: "/work/scratch",
     });
   });
 
@@ -81,6 +91,7 @@ describe("resolveScopes", () => {
     expect(resolveScopes("/work/scratch", git)).toStrictEqual({
       chain: [{ level: "user" }, { level: "repo", id: "local/bc7e00170321a9c9" }],
       fallback: "origin is not a host/owner/name address; using the local repo id",
+      root: "/work/scratch",
     });
   });
 
@@ -90,6 +101,7 @@ describe("resolveScopes", () => {
     expect(resolveScopes("/work/api", git)).toStrictEqual({
       chain: [{ level: "user" }],
       failure: "git remote get-url exited 128",
+      root: "/work/api",
     });
   });
 

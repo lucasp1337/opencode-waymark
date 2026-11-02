@@ -4,6 +4,8 @@ import type { ScopeChain } from "../../model/scope";
 import { unmetRequirements } from "../../model/validate";
 import type { MemoryStore } from "../../store/memory-store";
 import { memoryLine } from "../memory-line";
+import type { ToolDeps } from "../tool-deps";
+import { repoTargetFindings } from "./repo-targets-review";
 
 // What the telemetry noticed in the chain: facts and decisions that fell out of the session
 // index, and gotchas that fire often enough to be a nuisance.
@@ -12,7 +14,10 @@ export interface ReviewSignals {
   readonly noisy: readonly MemoryId[];
 }
 
-type ReviewStore = Pick<MemoryStore, "get" | "inScopes">;
+type ReviewDeps = Pick<ToolDeps, "productRepos"> & {
+  readonly store: Pick<MemoryStore, "get" | "inScopes">;
+};
+type ReviewStore = ReviewDeps["store"];
 
 const NOTHING_TO_REVIEW =
   "Nothing needs review: no memory is superseded or incomplete, none left the session index and no gotcha fires often.";
@@ -45,11 +50,28 @@ function signalLines(store: ReviewStore, ids: readonly MemoryId[]): string[] {
   });
 }
 
-export function reviewReport(
-  store: ReviewStore,
+function repoTargetSections(
+  deps: ReviewDeps,
   chain: ScopeChain,
-  signals: ReviewSignals,
-): string {
+): Array<{ heading: string; lines: string[] }> {
+  const findings = repoTargetFindings(deps, chain, activeOnly(deps.store.inScopes(chain)));
+  if (!findings.ok) {
+    return [{ heading: "Repo targets not checked:", lines: [`- ${findings.error}`] }];
+  }
+  return [
+    {
+      heading: "Aimed at a repo that left the product, so they no longer fire:",
+      lines: [...findings.value.departed],
+    },
+    {
+      heading: "Repos of this product no memory is aimed at (triggers.repos):",
+      lines: [...findings.value.untargeted],
+    },
+  ];
+}
+
+export function reviewReport(deps: ReviewDeps, chain: ScopeChain, signals: ReviewSignals): string {
+  const { store } = deps;
   const sections = [
     {
       heading: "Superseded, still on disk:",
@@ -64,6 +86,7 @@ export function reviewReport(
       lines: signalLines(store, signals.leftIndex),
     },
     { heading: "Gotchas that fire often:", lines: signalLines(store, signals.noisy) },
+    ...repoTargetSections(deps, chain),
   ].filter((section) => section.lines.length > 0);
   if (sections.length === 0) {
     return NOTHING_TO_REVIEW;

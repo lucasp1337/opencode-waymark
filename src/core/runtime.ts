@@ -8,7 +8,10 @@ import { DEFAULT_LIFECYCLE } from "./features/lifecycle/lifecycle-settings";
 import { memoryForgetTool } from "./features/lifecycle/memory-forget";
 import { createReviewSignals } from "./features/lifecycle/review-signals";
 import { memoryLinkTool } from "./features/link/memory-link";
+import { createRepoIds } from "./features/link/repo-ids";
+import { createRepoWatch, type RepoWatch } from "./features/link/repo-watch";
 import { createSecondRepoHints } from "./features/link/second-repo";
+import { createTouchedRoots } from "./features/link/touched-repos";
 import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
 import type { Baseline } from "./features/recall/fresh-memories";
 import { memoryInstructions } from "./features/recall/instructions";
@@ -30,8 +33,11 @@ import type { ToolDeps } from "./features/tool-deps";
 import type { MemoryId } from "./model/id";
 import { parseOptions } from "./options";
 import type { HostPort } from "./port";
+import { type CheckoutRecorder, createCheckoutRecorder } from "./scope/checkouts";
 import type { AsyncOriginUrl, Git } from "./scope/git";
 import { memoizeRegistryReads } from "./scope/memoized-registry";
+import { productRepos } from "./scope/products";
+import { catchRegistryIo } from "./scope/registry-file";
 import { createSessionScopes, type SessionScopes } from "./scope/session-scopes";
 import type { SyncReport } from "./store/cache";
 import type { Embedder } from "./store/embedder";
@@ -43,6 +49,8 @@ import { openTelemetry, type Telemetry } from "./telemetry/telemetry";
 
 export interface RuntimeDeps {
   readonly dataDir: string;
+  // The user's home directory, which the product map abbreviates to ~.
+  readonly home: string;
   readonly fs: FileSystem;
   readonly git: Git;
   readonly originUrl: AsyncOriginUrl;
@@ -104,9 +112,14 @@ interface Wiring extends Resources {
   readonly config: ConfigStore;
   readonly scopes: SessionScopes;
   readonly registryFile: string;
+  readonly recordCheckout: CheckoutRecorder;
   // Every registry read and write goes through this, so a write drops what reads remembered.
   readonly registryFs: FileSystem;
   readonly ownWrites: OwnWrites;
+}
+
+function productReposOf({ registryFs, registryFile }: Wiring): ToolDeps["productRepos"] {
+  return (product) => catchRegistryIo(() => productRepos(registryFs, registryFile, product));
 }
 
 function toolDepsOf(wiring: Wiring): ToolDeps {
@@ -120,6 +133,7 @@ function toolDepsOf(wiring: Wiring): ToolDeps {
     // Read per save, so a cap raised with memory_config applies at once.
     caps: () => config.current().caps,
     retriever: createRetriever({ store, vectors, embedder, sleep: deps.sleep, log: host.log }),
+    productRepos: productReposOf(wiring),
   };
 }
 
@@ -132,7 +146,7 @@ function commandToolDeps(wiring: Wiring, toolDeps: ToolDeps): MemoryCommandDeps 
     indexExit: () => config.current().indexExit,
     noisy: DEFAULT_LIFECYCLE.noisy,
   });
-  return { ...toolDeps, fs: registryFs, registryFile, reviewSignals };
+  return { ...toolDeps, fs: registryFs, registryFile, home: deps.home, reviewSignals };
 }
 
 function registerTools(wiring: Wiring): void {
@@ -186,6 +200,7 @@ function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf) {
     store,
     fs: registryFs,
     registryFile,
+    home: deps.home,
     instructions: memoryInstructions(
       saveGuidance({ host, fs: deps.fs, skillsDir: deps.skillsDir }),
     ),
@@ -208,10 +223,12 @@ function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf) {
 }
 
 function registerJit(
-  { host, store, counters, scopes, ownWrites }: Wiring,
+  wiring: Wiring,
   recallScope: RecallScopeOf,
+  repoWatch: RepoWatch,
   baseline: (sessionID: string) => Baseline | undefined,
 ): Forgetter {
+  const { host, store, counters, scopes, ownWrites } = wiring;
   const jit = createJit({
     recallScope,
     store,
@@ -220,6 +237,8 @@ function registerJit(
     currentChain: (sessionID) => scopes.chainFor(sessionID),
     baseline,
     ownWrites,
+    repoWatch,
+    productRepos: productReposOf(wiring),
     log: host.log,
   });
   host.onUserMessage((sessionID, text) => jit.onUserMessage(sessionID, text));
@@ -229,14 +248,19 @@ function registerJit(
 
 // Sessions without recall are not asked about products either.
 function registerSecondRepoHints(
-  { host, deps, registryFile, registryFs }: Wiring,
+  wiring: Wiring,
   recallScope: RecallScopeOf,
+  repoWatch: RepoWatch,
 ): Forgetter {
+  const { host, store, registryFile, registryFs, recordCheckout } = wiring;
   const hints = createSecondRepoHints({
     recallScope,
-    originUrl: deps.originUrl,
+    repoWatch,
+    store,
+    productRepos: productReposOf(wiring),
     fs: registryFs,
     registryFile,
+    recordCheckout,
     log: host.log,
   });
   host.onToolAfter((call) => hints.onToolAfter(call));
@@ -253,8 +277,13 @@ function registerCompaction({ host, config }: Wiring, recallScope: RecallScopeOf
 // Recall reaches the agent through the system prompt and tool outputs; a host lacking either
 // degrades to the rest.
 function registerRecall(wiring: Wiring): void {
-  const { host, scopes } = wiring;
-  const recall = createRecallScopes({ host, scopes, subagents: subagentsOf(wiring) });
+  const { host, scopes, recordCheckout } = wiring;
+  const recall = createRecallScopes({
+    host,
+    scopes,
+    recordCheckout,
+    subagents: subagentsOf(wiring),
+  });
   const recallScope = (sessionID: string) => recall.recallScope(sessionID);
   const forgetters: Forgetter[] = [recall, wiring.ownWrites];
   const blocks = host.capabilities.systemInjection
@@ -264,9 +293,14 @@ function registerRecall(wiring: Wiring): void {
     forgetters.push(blocks);
   }
   if (host.capabilities.toolOutputMutation) {
+    // One watch, so a call's touched repos are worked out once for every hook.
+    const repoWatch = createRepoWatch({
+      repoIds: createRepoIds({ originUrl: wiring.deps.originUrl, log: host.log }),
+      touchedRoots: createTouchedRoots({ fs: wiring.deps.fs, log: host.log }),
+    });
     forgetters.push(
-      registerJit(wiring, recallScope, (sessionID) => blocks?.baselineOf(sessionID)),
-      registerSecondRepoHints(wiring, recallScope),
+      registerJit(wiring, recallScope, repoWatch, (sessionID) => blocks?.baselineOf(sessionID)),
+      registerSecondRepoHints(wiring, recallScope, repoWatch),
     );
   }
   if (host.capabilities.compactionHook) {
@@ -289,6 +323,12 @@ function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void 
   const registryFile = join(deps.dataDir, "registry.json");
   const registryFs = memoizeRegistryReads(deps.fs, registryFile);
   const scopes = createSessionScopes({ host, git: deps.git, fs: registryFs, registryFile });
+  const recordCheckout = createCheckoutRecorder({
+    fs: registryFs,
+    registryFile,
+    now: deps.now,
+    log: host.log,
+  });
   const ownWrites = createOwnWrites();
   const store = ownWrites.attributeStore(resources.store);
   const wiring = {
@@ -299,6 +339,7 @@ function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void 
     config,
     scopes,
     registryFile,
+    recordCheckout,
     registryFs,
     ownWrites,
   };

@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A memory policy: a memory holds what you would otherwise have to tell the agent again and what the code, the repo and its docs cannot tell it. [What belongs in a memory](docs/memory-policy.md) explains it with examples.
 - A `waymark-save` skill, shipped with the plugin, that the agent loads before it saves or updates a memory. It covers what belongs in memory, which kind and scope to pick, and how to write it. Hosts without skills get the same text in the session instructions.
 - `/memory review` now also flags memories that fail the policy, such as functional detail readable from the code, team-wide conventions that belong in `AGENTS.md`, task progress and secrets, and offers to forget or move them.
+- Product atlas. Waymark records where each repo of a product is checked out on your machine, and the session block shows one map line instead of the bare list of repos: `Product payments: orders (here) · customers ~/src/customers · invoice-pdf (no checkout seen)`. [Product atlas](docs/features/product-atlas.md) walks through it.
+- A `repos` trigger: a product memory can be aimed at one repo of the product. It is listed in the session index with the repo's name and delivered in full when the agent works in that repo.
+- `/memory triggers [paths|commands|tools|keywords|repos]` lists the memories that fire, grouped by trigger and value. `/memory triggers repos` is the full map of the product.
+- `/memory review` lists memories aimed at a repo that left the product, and repos no memory is aimed at. `/memory move` refuses to move a memory with a `repos` trigger out of its product.
 
 ### Changed
 

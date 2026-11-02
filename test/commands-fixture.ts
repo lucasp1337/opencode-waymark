@@ -7,6 +7,8 @@ import type { MemoryId } from "../src/core/model/id";
 import { type Memory, newMemory } from "../src/core/model/memory";
 import type { ScopeRef } from "../src/core/model/scope";
 import type { Git, GitAnswer } from "../src/core/scope/git";
+import { productRepos } from "../src/core/scope/products";
+import { catchRegistryIo } from "../src/core/scope/registry-file";
 import { createSessionScopes, type SessionScopes } from "../src/core/scope/session-scopes";
 import { nodeFileSystem } from "../src/core/store/fs";
 import { type MemoryStore, openMemoryStore } from "../src/core/store/memory-store";
@@ -26,6 +28,8 @@ export const API_REPO: ScopeRef = { level: "repo", id: "github.com/acme/api" };
 export const USER: ScopeRef = { level: "user" };
 
 // Memories are seeded at this instant and the commands run a day later.
+export const HOME = "/home/lucas";
+
 export const SEEDED_AT = new Date("2026-03-01T10:00:00.000Z");
 export const COMMAND_TIME = new Date("2026-03-02T10:00:00.000Z");
 
@@ -117,7 +121,10 @@ export function useCommandFixture(setup: CommandSetup = {}): () => CommandFixtur
       caps: () => COMMAND_CAPS,
       fs: nodeFileSystem,
       registryFile,
+      home: HOME,
       reviewSignals: () => signals,
+      productRepos: (product) =>
+        catchRegistryIo(() => productRepos(nodeFileSystem, registryFile, product)),
     });
     host.registerTool(tool);
     return {

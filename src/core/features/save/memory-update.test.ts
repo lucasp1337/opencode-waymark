@@ -83,7 +83,7 @@ describe("memory_update", () => {
     const reply = await update(fx, { id: ID, title: "", triggers: { tool: ["x"] } });
 
     expect(reply).toBe(
-      "Not updated: title must be a non-empty string; triggers.tool is not one of paths, commands, tools, keywords",
+      "Not updated: title must be a non-empty string; triggers.tool is not one of paths, commands, tools, keywords, repos",
     );
     expect(await read(fx)).toContain("title: Use UTC\n");
   });

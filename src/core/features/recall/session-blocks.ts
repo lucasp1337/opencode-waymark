@@ -1,14 +1,12 @@
-import { isIndexed } from "../../model/kind";
+import { isListedInIndex } from "../../model/delivery";
 import { activeOnly } from "../../model/memory";
-import { type ScopeChain, scopeAt } from "../../model/scope";
 import type { HostPort } from "../../port";
-import { productRepos } from "../../scope/products";
-import { catchRegistryIo } from "../../scope/registry-file";
 import type { FileSystem } from "../../store/fs";
 import type { MemoryStore } from "../../store/memory-store";
 import type { Telemetry } from "../../telemetry/telemetry";
 import type { IndexExitThresholds } from "../lifecycle/lifecycle-settings";
 import { type Baseline, baselineOf } from "./fresh-memories";
+import { productBlock } from "./product-block";
 import type { RecallScope } from "./recall-scope";
 import { renderSessionBlock } from "./session-block";
 
@@ -16,6 +14,7 @@ interface SessionBlockDeps {
   readonly store: Pick<MemoryStore, "inScopes">;
   readonly fs: FileSystem;
   readonly registryFile: string;
+  readonly home: string;
   readonly instructions: string;
   readonly recallScope: (sessionID: string) => Promise<RecallScope | null>;
   // Read per rendering, so a changed setting applies to the next session without a restart.
@@ -24,19 +23,6 @@ interface SessionBlockDeps {
   readonly counters: Pick<Telemetry, "stats" | "recordSessions">;
   readonly now: () => Date;
   readonly log: HostPort["log"];
-}
-
-function productReposOf(deps: SessionBlockDeps, chain: ScopeChain): readonly string[] {
-  const product = scopeAt(chain, "product");
-  if (product?.level !== "product") {
-    return [];
-  }
-  const repos = catchRegistryIo(() => productRepos(deps.fs, deps.registryFile, product.id));
-  if (!repos.ok) {
-    deps.log("warn", "product repos not listed in session block", { error: repos.error });
-    return [];
-  }
-  return repos.value;
 }
 
 async function render(
@@ -51,12 +37,12 @@ async function render(
   }
   const memories = activeOnly(deps.store.inScopes(scope.chain));
   baselines.set(sessionID, baselineOf(memories));
-  const indexed = memories.filter((memory) => isIndexed(memory.kind)).map((memory) => memory.id);
+  const indexed = memories.filter((memory) => isListedInIndex(memory)).map((memory) => memory.id);
   const usage = { stats: deps.counters.stats(indexed), now: deps.now(), exit: deps.indexExit() };
   const block = renderSessionBlock({
     instructions: deps.instructions,
     chain: scope.chain,
-    productRepos: productReposOf(deps, scope.chain),
+    product: await productBlock(deps, scope.chain),
     memories,
     indexLines: deps.indexLines(),
     usage,

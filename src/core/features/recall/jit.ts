@@ -1,13 +1,16 @@
+import { firstTimeSeen } from "../../first-time";
+import { isDeliveredOnTrigger } from "../../model/delivery";
 import type { MemoryId } from "../../model/id";
-import { isRecalledByTrigger } from "../../model/kind";
 import { activeOnly, type Memory, type Triggers } from "../../model/memory";
-import { type ScopeChain, scopeKey } from "../../model/scope";
+import type { Result } from "../../model/result";
+import { type ScopeChain, scopeAt, scopeKey } from "../../model/scope";
 import { wordsOf } from "../../model/words";
 import type { HostPort, ToolCallInfo } from "../../port";
 import type { MemoryStore } from "../../store/memory-store";
 import type { Telemetry } from "../../telemetry/telemetry";
 import type { NoisyThresholds } from "../lifecycle/lifecycle-settings";
 import { noisyGotchaLine } from "../lifecycle/noisy-gotcha";
+import type { RepoWatch } from "../link/repo-watch";
 import { appliesLines, datedTitle } from "../memory-line";
 import {
   type Baseline,
@@ -31,6 +34,8 @@ interface JitDeps {
   // What the session's frozen block was rendered from; undefined while the session has none.
   baseline(sessionID: string): Baseline | undefined;
   readonly ownWrites: Pick<OwnWrites, "isOwn">;
+  readonly repoWatch: RepoWatch;
+  productRepos(product: string): Result<readonly string[], string>;
   readonly log: HostPort["log"];
 }
 
@@ -59,7 +64,7 @@ interface Candidate {
 
 function triggeredMemories(active: readonly Memory[]): Candidate[] {
   return active.flatMap((memory) =>
-    isRecalledByTrigger(memory.kind) && memory.triggers !== undefined
+    memory.triggers !== undefined && isDeliveredOnTrigger(memory)
       ? [{ memory, triggers: memory.triggers }]
       : [],
   );
@@ -132,13 +137,52 @@ function hasQueued(recall: SessionRecall): boolean {
   return recall.queued.size > 0 || recall.fresh.waiting.size > 0;
 }
 
+// A repo target counts only while the repo is in the memory's product: unlinking a repo keeps the
+// memory with the product but ends what it says about that repo. The registry is read (memoized)
+// only when a call touched a repo the memory aims at.
+interface RepoTriggerDeps extends Pick<JitDeps, "productRepos" | "log"> {
+  // A registry that stays unreadable is reported once, not on every call that touches a repo.
+  readonly firstTime: (problem: string) => boolean;
+}
+
+function liveTriggers(
+  deps: RepoTriggerDeps,
+  { memory, triggers }: Candidate,
+  facts: CallFacts,
+): Triggers {
+  const { repos, ...others } = triggers;
+  if (repos === undefined || !repos.some((repo) => facts.repos.includes(repo))) {
+    return triggers;
+  }
+  const members = memory.scope.level === "product" ? deps.productRepos(memory.scope.id) : undefined;
+  if (members !== undefined && !members.ok) {
+    if (deps.firstTime(members.error)) {
+      deps.log("warn", "product repos not read for a repo trigger", { error: members.error });
+    }
+  }
+  const linked = members?.ok ? repos.filter((repo) => members.value.includes(repo)) : [];
+  return linked.length === 0 ? others : { ...others, repos: linked };
+}
+
+// Repo targets exist only in products, so a session outside one needs no repo watching.
+function touchedRepoIds(watch: RepoWatch, call: ToolCallInfo, scope: RecallScope): string[] {
+  return scopeAt(scope.chain, "product") === undefined
+    ? []
+    : watch.observe(call, scope.directory).map(({ repo }) => repo);
+}
+
 function queueMatches(
+  deps: RepoTriggerDeps,
   recall: SessionRecall,
   candidates: readonly Candidate[],
   facts: CallFacts,
 ): void {
-  for (const { memory, triggers } of candidates) {
-    if (!recall.delivered.has(memory.id) && matchesTriggers(triggers, facts)) {
+  for (const candidate of candidates) {
+    const { memory } = candidate;
+    if (
+      !recall.delivered.has(memory.id) &&
+      matchesTriggers(liveTriggers(deps, candidate, facts), facts)
+    ) {
       recall.queued.set(memory.id, memory);
     }
   }
@@ -147,6 +191,7 @@ function queueMatches(
 // State is per activation and per session: what was already delivered, what waits for an output
 // that can carry text, and the words of the user's latest message.
 export function createJit(deps: JitDeps): Jit {
+  const repoTriggerDeps = { ...deps, firstTime: firstTimeSeen() };
   const sessions = new Map<string, SessionRecall>();
   const memoriesOn = createChainMemories(deps.store);
 
@@ -203,8 +248,9 @@ export function createJit(deps: JitDeps): Jit {
         return null;
       }
       // Nothing below awaits, so two parallel calls cannot both deliver the same memory.
-      const facts = callFacts(call, scope.directory, recall.words);
-      queueMatches(recall, memoriesOn(scope.chain).candidates, facts);
+      const repos = touchedRepoIds(deps.repoWatch, call, scope);
+      const facts = callFacts({ call, directory: scope.directory, words: recall.words, repos });
+      queueMatches(repoTriggerDeps, recall, memoriesOn(scope.chain).candidates, facts);
       if (since !== null) {
         queueFresh(recall.fresh, since.active, since.baseline, (memory) =>
           deps.ownWrites.isOwn(call.sessionID, memory),
@@ -214,6 +260,7 @@ export function createJit(deps: JitDeps): Jit {
     },
     forget(sessionID) {
       sessions.delete(sessionID);
+      deps.repoWatch.forget(sessionID);
     },
   };
 }

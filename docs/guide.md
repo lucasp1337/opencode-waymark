@@ -12,7 +12,7 @@ Hi, and welcome. Waymark gives your agent a memory that survives between session
 - `preference`: how you like things done. "Summarize diffs as bullets, no essays." Always shown.
 - `fact`: something true about your setup. "Customer data lives only in customers-svc; the others get the UID." Listed in a short index at session start.
 - `decision`: a choice and why. "Order events go through Kafka, not RabbitMQ (2026-03-12): we need replay." Needs a reason, listed in the index.
-- `gotcha`: a trap, with triggers (file globs, command prefixes, tool names or keywords). "Integration tests hang on my laptop unless the VPN is on." It pops up when the agent touches something that matches.
+- `gotcha`: a trap, with triggers (file globs, command prefixes, tool names, keywords or repos). "Integration tests hang on my laptop unless the VPN is on." It pops up when the agent touches something that matches.
 - `reference`: a pointer to somewhere else, with a locator (URL, path or ticket key). "Acme's incident runbook: https://wiki.acme.dev/incidents." Found by search.
 
 **Scopes** say where a memory applies, from widest to narrowest:
@@ -38,6 +38,7 @@ Memories are plain markdown files on your machine, one per memory, and you can o
 |------------------------------------|--------------------------------------------|
 | `/memory`                          | List the memories of this session's scopes |
 | `/memory review`                   | Show memories that need your attention     |
+| `/memory triggers [field]`         | Show the memories that fire, by trigger    |
 | `/memory move <id> <scope>`        | Move a memory to another scope             |
 | `/memory org merge <keep> <merge>` | Merge one org into another                 |
 | `/memory link <product>`           | Link this repo to a product                |
@@ -56,6 +57,10 @@ Lists the active memories of every scope in this session, grouped by scope and k
 
 Lists memories worth a second look: replaced ones still on disk, ones missing a required field, facts and decisions that dropped out of the session index, and gotchas that fire often. The agent then goes through them with you: keep, forget, merge into another memory, or turn into a rule. It also points out memories that do not meet the [memory policy](memory-policy.md), such as ones that only repeat what the code says, and offers to forget or move them. If nothing qualifies it says so.
 
+### `/memory triggers [field]`
+
+Lists the triggered memories reachable from this session, grouped by trigger field (`paths`, `commands`, `tools`, `keywords`, `repos`) and then by value, each with its id, kind, scope and title. Name a field to see only that one. `/memory triggers repos` is the map of the session's product: every repo with where it is checked out, and the memories aimed at it. See [product atlas](features/product-atlas.md).
+
 ### `/memory move <id> <scope>`
 
 Moves a memory to `user`, `org`, `product` or `repo`. The target must be one of this session's scopes.
@@ -65,7 +70,7 @@ Moves a memory to `user`, `org`, `product` or `repo`. The target must be one of 
 Moved [01J8Z4Q2KXV6N3] fact · org:github.com/acme · Staging resets nightly (2026-03-02)
 ```
 
-It is refused if the memory is already there, the session has no such scope, the target would go over its token cap, or the move would bring back a memory that was replaced.
+It is refused if the memory is already there, it is aimed at repos (a `repos` trigger) and the target is not a product that holds them, the session has no such scope, the target would go over its token cap, or the move would bring back a memory that was replaced.
 
 ### `/memory org merge <keep> <merge>`
 
@@ -117,6 +122,16 @@ The agent calls these for you. You rarely need them directly.
 | `memory_config` | Change settings |
 | `memory_command` | Runs the `/memory` subcommands above |
 | `memory_link` | Records your answer about linking repos into a product |
+
+## Triggers
+
+A memory can fire when the agent touches something that matches. Every trigger is matched structurally, never by reading text for meaning:
+
+- `paths`: globs on the files a tool call touches.
+- `commands`: prefixes of the shell command.
+- `tools`: exact tool names.
+- `keywords`: whole words in your message.
+- `repos`: repo ids; fires when a tool call touches the work tree of one of them. Product scope only, for repos of that product. See [product atlas](features/product-atlas.md).
 
 ## Kind details
 

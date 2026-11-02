@@ -5,6 +5,7 @@ import { CONTENT_PROPERTIES, ID_PROPERTY } from "../content-schema";
 import { lookupMemory } from "../memory-lookup";
 import type { ToolDeps } from "../tool-deps";
 import { persistMemory } from "./persist";
+import { checkRepoTargets } from "./repo-targets";
 
 async function update(deps: ToolDeps, input: unknown): Promise<string> {
   const existing = lookupMemory(deps.store, input);
@@ -18,6 +19,10 @@ async function update(deps: ToolDeps, input: unknown): Promise<string> {
   const content = patch.ok ? applyPatch(existing.value, patch.value) : patch;
   if (!content.ok) {
     return `Not updated: ${content.error.join("; ")}`;
+  }
+  const targets = checkRepoTargets(deps, existing.value.scope, content.value.triggers);
+  if (!targets.ok) {
+    return `Not updated: ${targets.error}.`;
   }
   const memory: Memory = {
     ...existing.value,

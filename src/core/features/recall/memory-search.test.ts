@@ -30,6 +30,7 @@ function ready(embedder: Embedder) {
 // A session whose chain is user, org and repo.
 const scopes: SessionScopes = {
   chainFor: (): Promise<ScopeChain> => Promise.resolve([USER, ORG, REPO]),
+  resolveSession: () => Promise.resolve({ chain: [USER, ORG, REPO], root: undefined }),
 };
 
 // By default meaning is available but knows nothing, so results come from words and carry no note.

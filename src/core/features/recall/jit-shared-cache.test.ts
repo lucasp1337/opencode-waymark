@@ -4,6 +4,7 @@ import { rethrowCacheFailure } from "../../../../test/rethrow-cache-failure";
 import { useTempDirs } from "../../../../test/temp-dir";
 import { validContent } from "../../../../test/valid-content";
 import { type Memory, newMemory } from "../../model/memory";
+import { ok } from "../../model/result";
 import type { ScopeRef } from "../../model/scope";
 import type { ToolCallInfo } from "../../port";
 import { nodeFileSystem } from "../../store/fs";
@@ -60,6 +61,8 @@ function jitOver(store: MemoryStore, baseline?: Baseline) {
     currentChain: () => Promise.resolve([USER]),
     baseline: () => baseline,
     ownWrites: { isOwn: () => false },
+    repoWatch: { observe: () => [], forget: () => undefined },
+    productRepos: () => ok([]),
     log: () => undefined,
   });
 }

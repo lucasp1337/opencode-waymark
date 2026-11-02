@@ -31,11 +31,24 @@ const NO_USAGE: IndexUsage = { stats: new Map(), now: NOW, exit: { sessions: 20,
 
 const INSTRUCTIONS = "Instructions for the agent.";
 
+const SHOP: ScopeRef = { level: "product", id: "shop" };
+
+function renderInShop(memories: Memory[]): string {
+  return renderSessionBlock({
+    instructions: INSTRUCTIONS,
+    chain: [USER, SHOP, REPO],
+    product: { members: [] },
+    memories,
+    indexLines: 40,
+    usage: NO_USAGE,
+  }).text;
+}
+
 function render(memories: Memory[], indexLines = 40, usage: IndexUsage = NO_USAGE): string {
   return renderSessionBlock({
     instructions: INSTRUCTIONS,
     chain: CHAIN,
-    productRepos: [],
+    product: { members: [] },
     memories,
     indexLines,
     usage,
@@ -107,6 +120,54 @@ describe("renderSessionBlock", () => {
     expect(indexLine(entry)).toBe(`- [${entry.id}] Slow (2026-03-01)\n  Applies: On CI`);
   });
 
+  test("prefixes an entry aimed at repos with their short names", () => {
+    const entry = memory(
+      {
+        kind: "decision",
+        title: "Owns the cart",
+        body: "b",
+        why: "w",
+        triggers: { repos: ["github.com/acme/web", "github.com/acme/api"] },
+      },
+      { n: 5, scope: SHOP },
+    );
+
+    expect(indexLine(entry)).toBe(`- [${entry.id}] [web, api] Owns the cart (2026-03-01)`);
+  });
+
+  test("lists a rule aimed at repos in the index instead of showing it in full", () => {
+    const aimedRule = memory(
+      {
+        kind: "rule",
+        title: "Customers PII stays put",
+        body: "Never copy PII out.",
+        why: "w",
+        triggers: { repos: ["github.com/acme/customers"] },
+      },
+      { n: 6, scope: SHOP },
+    );
+
+    const text = renderInShop([aimedRule]);
+
+    expect(text).not.toContain("### Rules");
+    expect(text).not.toContain("Never copy PII out.");
+    expect(text).toContain(`- [${aimedRule.id}] [customers] Customers PII stays put (2026-03-01)`);
+  });
+
+  test("lists a gotcha aimed at repos in the index", () => {
+    const aimedGotcha = memory(
+      {
+        kind: "gotcha",
+        title: "Customer ids are opaque",
+        body: "b",
+        triggers: { repos: ["github.com/acme/customers"] },
+      },
+      { n: 7, scope: SHOP },
+    );
+
+    expect(renderInShop([aimedGotcha])).toContain(`- [${aimedGotcha.id}] [customers] Customer ids`);
+  });
+
   test("dates a rule by its last update", () => {
     const text = render([
       memory(
@@ -121,7 +182,7 @@ describe("renderSessionBlock", () => {
   test("groups by scope with the narrowest scope last", () => {
     const text = render([
       memory({ kind: "rule", title: "Repo rule", body: "", why: "w" }, { n: 5, scope: REPO }),
-      memory({ kind: "rule", title: "User rule", body: "", why: "w" }, { n: 6, scope: USER }),
+      memory({ kind: "rule", title: "User rule", body: "", why: "w" }, { n: 6, scope: SHOP }),
     ]);
 
     expect(text.indexOf("#### user")).toBeLessThan(text.indexOf("#### repo:github.com/acme/api"));
@@ -237,7 +298,7 @@ describe("renderSessionBlock", () => {
     const { shown } = renderSessionBlock({
       instructions: INSTRUCTIONS,
       chain: CHAIN,
-      productRepos: [],
+      product: { members: [] },
       memories: [shownRule, hiddenGotcha, cutFact, keptFact],
       indexLines: 1,
       usage: NO_USAGE,

@@ -32,6 +32,7 @@ export function systemDeps(
   const dataDir = dataRoot(env, homedir());
   return {
     dataDir,
+    home: homedir(),
     skillsDir: fileURLToPath(new URL("../../skills", import.meta.url)),
     fs: nodeFileSystem,
     git: processGit,

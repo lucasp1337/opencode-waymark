@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { memoryId } from "../../../../test/memory-id";
 import { useTempDirs } from "../../../../test/temp-dir";
@@ -7,8 +8,9 @@ import type { MemoryId } from "../../model/id";
 import { type Memory, newMemory } from "../../model/memory";
 import type { ScopeChain } from "../../model/scope";
 import type { LogLevel } from "../../port";
+import { createCheckoutRecorder } from "../../scope/checkouts";
 import { linkRepos } from "../../scope/products";
-import { nodeFileSystem } from "../../store/fs";
+import { type FileSystem, nodeFileSystem } from "../../store/fs";
 import { type MemoryStats, type Telemetry, UNSEEN } from "../../telemetry/telemetry";
 import type { RecallScope } from "./recall-scope";
 import { createSessionBlocks } from "./session-blocks";
@@ -16,7 +18,11 @@ import { createSessionBlocks } from "./session-blocks";
 const INSTRUCTIONS = "Instructions for the agent.";
 const CHAIN: ScopeChain = [{ level: "user" }];
 // A registry file that does not exist reads as empty.
-const NO_REGISTRY = { fs: nodeFileSystem, registryFile: "/nonexistent/registry.json" };
+const NO_REGISTRY = {
+  fs: nodeFileSystem,
+  registryFile: "/nonexistent/registry.json",
+  home: "/home/lucas",
+};
 
 function rule(id: string, title: string, supersedes?: string): Memory {
   return newMemory(validContent({ kind: "rule", title, body: "", why: "w" }), {
@@ -307,10 +313,11 @@ describe("createSessionBlocks baseline", () => {
   });
 });
 
-describe("createSessionBlocks scopes line", () => {
+describe("createSessionBlocks product", () => {
   const tempDir = useTempDirs();
   const ORDERS = "github.com/acme/orders-svc";
   const CUSTOMERS = "github.com/acme/customers-svc";
+  const HOME = "/home/lucas";
   const LINKED: ScopeChain = [
     { level: "user" },
     { level: "org", id: "github.com/acme" },
@@ -318,55 +325,168 @@ describe("createSessionBlocks scopes line", () => {
     { level: "repo", id: ORDERS },
   ];
 
-  async function blockFor(chain: ScopeChain, linked: readonly string[]): Promise<string | null> {
+  interface Setup {
+    readonly chain?: ScopeChain;
+    readonly linked?: readonly string[];
+    // Repo id -> work tree root, written to the registry.
+    readonly checkouts?: Readonly<Record<string, string>>;
+    readonly registryText?: string;
+    readonly fs?: Partial<FileSystem>;
+  }
+
+  async function blockWith(setup: Setup, logged: Logged[] = []): Promise<string | null> {
     const registryFile = join(tempDir(), "registry.json");
+    const linked = setup.linked ?? [];
     if (linked.length > 0) {
       await linkRepos(nodeFileSystem, registryFile, { repos: linked, product: "shop" });
+    }
+    const checkouts = Object.entries(setup.checkouts ?? {});
+    for (const [repo, root] of checkouts) {
+      await createCheckoutRecorder({
+        fs: nodeFileSystem,
+        registryFile,
+        now: () => NOW,
+        log: () => undefined,
+      })(repo, root);
+    }
+    if (setup.registryText !== undefined) {
+      nodeFileSystem.writeAtomic(registryFile, setup.registryText);
     }
     const blocks = createSessionBlocks({
       instructions: INSTRUCTIONS,
       store: { inScopes: () => [] },
-      fs: nodeFileSystem,
+      fs: { ...nodeFileSystem, ...setup.fs },
       registryFile,
-      recallScope: () => Promise.resolve({ chain, directory: "/d" }),
+      home: HOME,
+      recallScope: () => Promise.resolve({ chain: setup.chain ?? LINKED, directory: "/d" }),
       indexLines: () => 40,
       indexExit: () => ({ sessions: 20, days: 30 }),
       counters: fakeCounters().counters,
       now: () => NOW,
-      log: () => undefined,
+      log: (level, msg, data) => {
+        logged.push({ level, msg, data });
+      },
     });
     return await blocks.blockFor("s");
   }
 
-  test("names every scope, and the product's repos, although none holds a memory", async () => {
-    const block = await blockFor(LINKED, [ORDERS, CUSTOMERS]);
+  function workTree(): string {
+    const root = tempDir();
+    mkdirSync(join(root, ".git"));
+    return root;
+  }
+
+  test("keeps the plain product key in the scopes line and puts the map on its own line", async () => {
+    const block = await blockWith({ linked: [ORDERS, CUSTOMERS] });
 
     expect(block).toContain(
-      `Scopes here: user · org:github.com/acme · product:shop (${ORDERS}, ${CUSTOMERS}) · repo:${ORDERS}`,
+      `Scopes here: user · org:github.com/acme · product:shop · repo:${ORDERS}\n` +
+        "Product shop: orders-svc (here) · customers-svc (no checkout seen)",
     );
   });
 
-  test("names only the scopes of the chain when the repo is not linked", async () => {
-    const block = await blockFor([{ level: "user" }, { level: "repo", id: ORDERS }], []);
+  test("shows a sibling's checkout path while its .git exists", async () => {
+    const root = workTree();
+
+    const block = await blockWith({
+      linked: [ORDERS, CUSTOMERS],
+      checkouts: { [CUSTOMERS]: root },
+    });
+
+    expect(block).toContain(`customers-svc ${root}`);
+  });
+
+  test("shortens the home directory to a tilde", async () => {
+    const fs = { exists: () => Promise.resolve(true) };
+
+    const block = await blockWith({
+      linked: [ORDERS, CUSTOMERS],
+      checkouts: { [CUSTOMERS]: `${HOME}/src/customers` },
+      fs,
+    });
+
+    expect(block).toContain("customers-svc ~/src/customers");
+  });
+
+  test("says no checkout was seen when the recorded work tree has no .git any more", async () => {
+    const block = await blockWith({
+      linked: [ORDERS, CUSTOMERS],
+      checkouts: { [CUSTOMERS]: join(tempDir(), "gone") },
+    });
+
+    expect(block).toContain("customers-svc (no checkout seen)");
+  });
+
+  test("says no checkout was seen and warns when the work tree cannot be examined", async () => {
+    const logged: Logged[] = [];
+    const fs = {
+      exists: () => Promise.reject(new Error("EACCES")),
+    };
+
+    const block = await blockWith(
+      { linked: [ORDERS, CUSTOMERS], checkouts: { [CUSTOMERS]: "/src/customers" }, fs },
+      logged,
+    );
+
+    expect(block).toContain("customers-svc (no checkout seen)");
+    expect(logged.some((entry) => entry.level === "warn" && entry.msg.includes("checkout"))).toBe(
+      true,
+    );
+  });
+
+  test("looks at a work tree shared by two repos once", async () => {
+    const asked: string[] = [];
+    const exists = (path: string) => {
+      asked.push(path);
+      return Promise.resolve(true);
+    };
+
+    await blockWith({
+      linked: [ORDERS, CUSTOMERS, "github.com/acme/billing-svc"],
+      checkouts: { [CUSTOMERS]: "/src/mono", "github.com/acme/billing-svc": "/src/mono" },
+      fs: { exists },
+    });
+
+    expect(asked).toEqual(["/src/mono/.git"]);
+  });
+
+  test("names the plain scopes only when the repo is not linked", async () => {
+    const block = await blockWith({ chain: [{ level: "user" }, { level: "repo", id: ORDERS }] });
 
     expect(block).toEndWith(`Scopes here: user · repo:${ORDERS}`);
   });
 
-  test("names the product without a repo list when the registry has no repos for it", async () => {
-    const block = await blockFor(LINKED, []);
+  test("names the product without a map when the registry has no repos for it", async () => {
+    const block = await blockWith({});
 
     expect(block).toContain(`product:shop · repo:${ORDERS}`);
+    expect(block).not.toContain("Product shop:");
   });
 
-  test("names the product alone and warns when the registry cannot be read", async () => {
-    const registryFile = join(tempDir(), "registry.json");
-    nodeFileSystem.writeAtomic(registryFile, '{"products":{"shop":1}}');
+  test("falls back to the member list and warns when the registry cannot be read", async () => {
     const logged: Logged[] = [];
+
+    const block = await blockWith({ registryText: '{"products":{"shop":1}}' }, logged);
+
+    expect(block).toContain(`product:shop · repo:${ORDERS}`);
+    expect(
+      logged.some((entry) => entry.level === "warn" && entry.msg.includes("product repos")),
+    ).toBe(true);
+  });
+
+  test("falls back to the member list and warns when the checkouts cannot be read", async () => {
+    const logged: Logged[] = [];
+    const registryFile = join(tempDir(), "registry.json");
+    nodeFileSystem.writeAtomic(
+      registryFile,
+      JSON.stringify({ products: { shop: { repos: [ORDERS, CUSTOMERS] } }, checkouts: 1 }),
+    );
     const blocks = createSessionBlocks({
       instructions: INSTRUCTIONS,
       store: { inScopes: () => [] },
       fs: nodeFileSystem,
       registryFile,
+      home: HOME,
       recallScope: () => Promise.resolve({ chain: LINKED, directory: "/d" }),
       indexLines: () => 40,
       indexExit: () => ({ sessions: 20, days: 30 }),
@@ -379,9 +499,9 @@ describe("createSessionBlocks scopes line", () => {
 
     const block = await blocks.blockFor("s");
 
-    expect(block).toContain(`product:shop · repo:${ORDERS}`);
-    expect(
-      logged.some((entry) => entry.level === "warn" && entry.msg.includes("product repos")),
-    ).toBe(true);
+    expect(block).toContain(`product:shop (${ORDERS}, ${CUSTOMERS}) · repo:${ORDERS}`);
+    expect(logged.some((entry) => entry.level === "warn" && entry.msg.includes("checkouts"))).toBe(
+      true,
+    );
   });
 });

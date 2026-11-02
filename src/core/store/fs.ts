@@ -12,6 +12,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { ulid } from "ulid";
 
@@ -42,6 +43,9 @@ export interface FileSystem {
   realPath(path: string): string | undefined;
   // False for a file and for a path that does not exist; other errors throw.
   isDirectory(path: string): boolean;
+  // For hooks, which must not block the event loop on disk. False when nothing is there; other
+  // errors reject.
+  exists(path: string): Promise<boolean>;
 }
 
 function hasCode(error: unknown, code: string): boolean {
@@ -198,6 +202,17 @@ export function createFileSystem(newTmpSuffix: () => string): FileSystem {
       }
     },
     isDirectory,
+    exists: async (path) => {
+      try {
+        await stat(path);
+        return true;
+      } catch (error) {
+        if (isMissing(error) || hasCode(error, "ENOTDIR")) {
+          return false;
+        }
+        throw error;
+      }
+    },
   };
 }
 

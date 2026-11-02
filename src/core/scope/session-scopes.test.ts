@@ -65,6 +65,25 @@ describe("createSessionScopes", () => {
     ]);
   });
 
+  test("reports the root of the session's work tree", async () => {
+    const host = hostWith({ ses_a: "/work/api/src" });
+
+    const session = await scopesFor(host, gitAnswering(found("/work/api"))).resolveSession("ses_a");
+
+    expect(session.root).toBe("/work/api");
+    expect(repoIdIn(session.chain)).toBe("github.com/acme/api");
+  });
+
+  test("reports no root for a session outside a repository", async () => {
+    const host = hostWith({ ses_a: "/tmp/notes" });
+
+    const session = await scopesFor(host, gitAnswering({ status: "absent" })).resolveSession(
+      "ses_a",
+    );
+
+    expect(session.root).toBeUndefined();
+  });
+
   test("asks git once per directory", async () => {
     const host = hostWith({ ses_a: "/work/api", ses_b: "/work/api" });
     const git = gitAnswering(found("/work/api"));

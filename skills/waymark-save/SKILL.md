@@ -49,6 +49,12 @@ Kinds reach future sessions differently. Pick the cheapest that still gets the m
 
 Would it hold in another repo of the same org? Yes: `org`, or `user` if it is about the person. Only in the repos linked into this product: `product`. Otherwise: `repo`.
 
+## Aiming a memory at a repo
+
+In a product, a memory about one repo of it can carry `triggers.repos` (full repo ids, listed by `/memory triggers repos`; a save naming an unknown id is refused with the product's member ids): it is then listed with that repo's name and delivered in full when you touch that repo's work tree. Only at product scope, only for repos of that product, on any kind. A `fact` or `decision` fits a role or boundary ("customers owns the customer PII; the others only get the UID"), a `rule` fits a process ("schema changes in billing need the finance team's sign-off").
+
+Say who owns what, which boundary holds, which process applies, and why. Not the contract: endpoints, schemas, event names, dependencies, or what the repo's code does. A sibling's checkout, where the map shows one, may be read to check a contract. Changing anything outside the current repo needs the user's go-ahead.
+
 ## Writing it
 
 - Write the why, not only the what. For a rule, preference or gotcha, put when it matters and what to do in `howToApply`.

@@ -1,19 +1,24 @@
-import { repoIdIn } from "../../model/scope";
+import { firstTimeSeen } from "../../first-time";
+import { repoIdIn, type ScopeChain } from "../../model/scope";
 import type { HostPort, ToolCallInfo } from "../../port";
-import type { AsyncOriginUrl } from "../../scope/git";
+import type { CheckoutRecorder } from "../../scope/checkouts";
 import { type PairStatus, pairStatus } from "../../scope/products";
 import { catchRegistryIo } from "../../scope/registry-file";
 import type { FileSystem } from "../../store/fs";
+import type { MemoryStore } from "../../store/memory-store";
 import type { RecallScope } from "../recall/recall-scope";
-import { createRepoIds, type RepoIds } from "./repo-ids";
-import { createTouchedRoots } from "./touched-repos";
+import type { ToolDeps } from "../tool-deps";
+import type { RepoWatch, SeenRepo } from "./repo-watch";
+import { roleNote } from "./role-note";
 
-interface SecondRepoDeps {
+interface SecondRepoDeps extends Pick<ToolDeps, "productRepos"> {
+  readonly store: Pick<MemoryStore, "inScopes">;
   // null: this session gets no recall, and no hint.
   recallScope(sessionID: string): Promise<RecallScope | null>;
-  readonly originUrl: AsyncOriginUrl;
+  readonly repoWatch: RepoWatch;
   readonly fs: FileSystem;
   readonly registryFile: string;
+  readonly recordCheckout: CheckoutRecorder;
   readonly log: HostPort["log"];
 }
 
@@ -31,12 +36,13 @@ interface Hint {
 }
 
 interface SessionHints {
-  // Repo roots this session touched whose repo is not known yet.
-  unresolved: Set<string>;
   // Other repos this session has been hinted about or needs no hint for.
   readonly decided: Set<string>;
   // Waiting for a call whose output can carry them.
   readonly queued: Hint[];
+  // Repos of the product already checked for a targeted memory, and the suggestions waiting.
+  readonly noted: Set<string>;
+  readonly roleNotes: string[];
 }
 
 function hintText(session: string, other: string, product: string | undefined): string {
@@ -82,6 +88,39 @@ function decide(
   }
 }
 
+function decideAboutOthers(
+  deps: Pick<SecondRepoDeps, "fs" | "registryFile" | "log">,
+  state: SessionHints,
+  { own, seen }: { own: string; seen: readonly SeenRepo[] },
+): void {
+  for (const { repo } of seen.filter((found) => found.repo !== own)) {
+    decide(deps, state, [own, repo]);
+  }
+}
+
+// A store or registry that cannot be read leaves the repo unchecked, so a later call asks again;
+// the problem is logged once per activation.
+function noteRoles(
+  deps: Pick<SecondRepoDeps, "store" | "productRepos" | "log">,
+  state: SessionHints,
+  { chain, own, seen }: { chain: ScopeChain; own: string; seen: readonly SeenRepo[] },
+  firstTime: (problem: string) => boolean,
+): void {
+  for (const { repo } of seen.filter(
+    (found) => found.repo !== own && !state.noted.has(found.repo),
+  )) {
+    const note = catchRegistryIo(() => roleNote(deps, chain, repo));
+    if (note.ok) {
+      state.noted.add(repo);
+      if (note.value !== undefined) {
+        state.roleNotes.push(note.value);
+      }
+    } else if (firstTime(note.error)) {
+      deps.log("warn", "role suggestion not checked", { repo, error: note.error });
+    }
+  }
+}
+
 function takeQueued(
   log: HostPort["log"],
   { sessionID, repo }: { sessionID: string; repo: string },
@@ -91,41 +130,29 @@ function takeQueued(
   for (const { other } of hints) {
     log("info", "product hint", { sessionID, repo, other });
   }
-  return hints.length === 0
-    ? null
-    : hints.map(({ other, product }) => hintText(repo, other, product)).join("\n\n");
+  const texts = [
+    ...hints.map(({ other, product }) => hintText(repo, other, product)),
+    ...state.roleNotes.splice(0),
+  ];
+  return texts.length === 0 ? null : texts.join("\n\n");
 }
 
-// The repos, other than `own`, of this session's unresolved roots that are known by now. A root's
-// origin is looked up off the hook's path, so a hint follows the first call into a repo by one
-// call and never delays it.
-function resolvedOthers(repoIds: RepoIds, state: SessionHints, own: string): string[] {
-  const repos: string[] = [];
-  for (const root of state.unresolved) {
-    const found = repoIds.lookup(root);
-    if (found.status === "pending") {
-      continue;
-    }
-    state.unresolved.delete(root);
-    if (found.status === "known" && found.repo !== undefined && found.repo !== own) {
-      repos.push(found.repo);
-    }
-  }
-  return repos;
-}
-
-// Everything after the one await is synchronous, so parallel calls of a session cannot both hint
-// the same repo.
+// Hints are decided before the awaits that follow the first one, so parallel calls of a session
+// cannot both hint the same repo.
 export function createSecondRepoHints(deps: SecondRepoDeps): SecondRepoHints {
-  const touchedRoots = createTouchedRoots(deps);
-  const repoIds = createRepoIds({ originUrl: deps.originUrl, log: deps.log });
   const sessions = new Map<string, SessionHints>();
+  const firstTime = firstTimeSeen();
   const stateOf = (sessionID: string): SessionHints => {
     const known = sessions.get(sessionID);
     if (known !== undefined) {
       return known;
     }
-    const created: SessionHints = { unresolved: new Set(), decided: new Set(), queued: [] };
+    const created: SessionHints = {
+      decided: new Set(),
+      queued: [],
+      noted: new Set(),
+      roleNotes: [],
+    };
     sessions.set(sessionID, created);
     return created;
   };
@@ -137,17 +164,21 @@ export function createSecondRepoHints(deps: SecondRepoDeps): SecondRepoHints {
         return null;
       }
       const state = stateOf(call.sessionID);
-      state.unresolved = new Set([...state.unresolved, ...touchedRoots(call, scope.directory)]);
-      for (const other of resolvedOthers(repoIds, state, repo)) {
-        decide(deps, state, [repo, other]);
-      }
-      return call.appendable
+      const seen = deps.repoWatch.observe(call, scope.directory);
+      decideAboutOthers(deps, state, { own: repo, seen });
+      noteRoles(deps, state, { chain: scope.chain, own: repo, seen }, firstTime);
+      const hint = call.appendable
         ? takeQueued(deps.log, { sessionID: call.sessionID, repo }, state)
         : null;
+      for (const found of seen) {
+        // Not awaited: the recorder logs its own failures and may wait for the registry lock.
+        void deps.recordCheckout(found.repo, found.root);
+      }
+      return hint;
     },
     forget(sessionID) {
       sessions.delete(sessionID);
-      repoIds.retryFailed();
+      deps.repoWatch.forget(sessionID);
     },
   };
 }

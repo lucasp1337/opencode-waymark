@@ -1,5 +1,5 @@
+import { isListedInIndex } from "../../model/delivery";
 import type { MemoryId } from "../../model/id";
-import { isIndexed } from "../../model/kind";
 import type { Memory } from "../../model/memory";
 import { DAY_MS, type MemoryStats, UNSEEN } from "../../telemetry/telemetry";
 import type { IndexExitThresholds } from "./lifecycle-settings";
@@ -35,6 +35,6 @@ function activityAt(memory: Memory, usage: IndexUsage): number {
 // first. The rest stay readable and searchable.
 export function visibleIndex(memories: readonly Memory[], usage: IndexUsage): Memory[] {
   return memories
-    .filter((memory) => isIndexed(memory.kind) && !hasLeftIndex(memory, usage))
+    .filter((memory) => isListedInIndex(memory) && !hasLeftIndex(memory, usage))
     .toSorted((a, b) => activityAt(b, usage) - activityAt(a, usage));
 }

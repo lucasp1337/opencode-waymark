@@ -10,6 +10,8 @@ export interface ResolvedScopes {
   readonly org?: OrgRef;
   // Git could not answer, so the chain is the user scope alone rather than a guessed repo scope.
   readonly failure?: string;
+  // The work tree root git found, whether or not a repo id came of it.
+  readonly root?: string;
   // The chain is usable but less precise than it could be.
   readonly fallback?: string;
 }
@@ -58,7 +60,7 @@ export function resolveScopes(dir: string, git: Git): ResolvedScopes {
   const root = git.root(dir);
   switch (root.status) {
     case "found":
-      return repoScopes(root.value, git);
+      return { ...repoScopes(root.value, git), root: root.value };
     case "absent":
       return { chain: [USER_SCOPE] };
     case "failed":
