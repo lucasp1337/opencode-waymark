@@ -6,12 +6,12 @@ import { createFileLogger, type Logger, logFilePath } from "../../../src/logger"
 
 const MODEL = "Xenova/multilingual-e5-small";
 const REPO_ROOT = resolve(import.meta.dir, "..", "..", "..");
-// e5 expects a "query: " prefix on symmetric similarity inputs.
+// Two English paraphrase pairs. e5 expects a "query: " prefix on symmetric similarity inputs.
 const SENTENCES = [
   "query: The deploy script must run from the repository root.",
-  "query: Skript na nasadenie sa musí spúšťať z koreňového adresára repozitára.",
+  "query: Only launch release tooling in the topmost folder.",
   "query: Use tabs, not spaces, in Makefiles.",
-  "query: V súboroch Makefile používaj tabulátory, nie medzery.",
+  "query: Makefile indentation must be tabs; spaces are rejected.",
 ];
 
 interface OrtTensor {

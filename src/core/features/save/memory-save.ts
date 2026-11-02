@@ -1,4 +1,4 @@
-import { type Memory, newMemory, type ValidContent } from "../../model/memory";
+import { type Memory, newMemory, titleAndBody, type ValidContent } from "../../model/memory";
 import { ownField } from "../../model/own-field";
 import { err, ok, type Result } from "../../model/result";
 import {
@@ -88,16 +88,18 @@ function buildMemory(
   return ok({ ...updated, created: existing.created });
 }
 
-// Words and, once the local model is loaded, meaning: a paraphrase in another language counts.
+// Memories that repeat much of the new text's words and, once the local model is loaded, those
+// that mean the same: a paraphrase counts.
 async function relatedTo(
   deps: ToolDeps,
-  { title, body }: ValidContent,
+  content: ValidContent,
   scopes: ScopeChain,
 ): Promise<Memory[]> {
-  const found = await deps.retriever.search(
-    { text: `${title}\n${body}`, scopes, limit: RELATED_LIMIT },
-    { waitForModel: true },
-  );
+  const found = await deps.retriever.duplicatesOf({
+    text: titleAndBody(content),
+    scopes,
+    limit: RELATED_LIMIT,
+  });
   return found.memories;
 }
 

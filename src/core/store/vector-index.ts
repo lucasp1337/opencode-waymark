@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import type { MemoryId } from "../model/id";
-import type { Memory } from "../model/memory";
+import { type Memory, titleAndBody } from "../model/memory";
 import { ownField } from "../model/own-field";
 import { type DerivedSchema, openDerivedDatabase, writing } from "./derived-database";
 import { type Embedder, EmbeddingShapeError } from "./embedder";
@@ -40,7 +40,7 @@ interface Wanted {
 }
 
 function wantedFor(memory: Memory, model: string): Wanted {
-  const text = `${memory.title}\n${memory.body}`;
+  const text = titleAndBody(memory);
   const digest = createHash("sha256").update(`${model}\n${text}`).digest("hex");
   return { memory, text, digest };
 }

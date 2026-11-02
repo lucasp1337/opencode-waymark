@@ -119,7 +119,7 @@ describe("decodeMemory round trip", () => {
       memoryOf({ kind: "fact", title: "t", body: "---\nnot frontmatter\n---\n" }),
     ],
     [
-      "Slovak diacritics in every text field",
+      "non-ASCII letters in every text field",
       memoryOf({
         kind: "rule",
         title: "Čas v UTC, nie lokálny",

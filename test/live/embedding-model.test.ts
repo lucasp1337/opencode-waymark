@@ -5,14 +5,13 @@ import type { Embedder } from "../../src/core/store/embedder";
 import { useTempDirs } from "../temp-dir";
 import { LIVE_MODEL_CACHE } from "./harness";
 
-// Memories are embedded as title and body; all three are Slovak developer notes, as one store in
-// one language would hold.
+// Memories are embedded as title and body; all three are English developer notes.
 const ORIGINAL =
-  "Nasadzovací skript sa spúšťa z koreňa repozitára\nSpustenie z podadresára rozbije relatívne cesty.";
+  "Deploy script runs from the repository root\nRunning it from a subdirectory breaks relative paths.";
 const PARAPHRASE =
-  "Nasadzovací skript spúšťaj iba v hlavnom priečinku repozitára\nInde spustený skript má nefunkčné relatívne cesty.";
+  "Only launch release tooling in the topmost folder\nElsewhere, file references stop resolving.";
 const UNRELATED =
-  "Integračné testy potrebujú spustený Docker\nPred sadou testov štartujú kontajner s Postgresom.";
+  "Integration tests need Docker running\nA Postgres container starts before the test suite.";
 
 const tempDir = useTempDirs();
 let embedder: Embedder | undefined;
@@ -40,11 +39,11 @@ describe("embedding model", () => {
     embedder = await loadTransformersEmbedder(LIVE_MODEL_CACHE ?? tempDir());
   });
 
-  test("a Slovak paraphrase of a Slovak memory scores at or above the similarity floor", async () => {
+  test("a paraphrase of a memory scores at or above the similarity floor", async () => {
     expect(await similarity(ORIGINAL, PARAPHRASE)).toBeGreaterThanOrEqual(MIN_SIMILARITY);
   });
 
-  test("an unrelated Slovak developer note scores below the similarity floor", async () => {
+  test("an unrelated developer note scores below the similarity floor", async () => {
     expect(await similarity(ORIGINAL, UNRELATED)).toBeLessThan(MIN_SIMILARITY);
   });
 });

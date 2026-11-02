@@ -13,7 +13,7 @@ const HIT_LIMIT = 10;
 const INPUT_SCHEMA: JsonSchemaObject = {
   type: "object",
   properties: {
-    query: { type: "string", description: "What to look for, in any language" },
+    query: { type: "string", description: "What to look for" },
     kinds: { type: "array", items: KIND_PROPERTY, description: "Only these kinds" },
     scopes: { type: "array", items: SCOPE_PROPERTY, description: "Only these scopes" },
   },
@@ -87,7 +87,7 @@ export function memorySearchTool(deps: SearchDeps): ToolDef {
   return {
     name: "memory_search",
     description:
-      "Search saved memories of this session's scopes. Matches words, and meaning across languages once the local model has loaded. Returns the best matches; read one in full with memory_read. Results can be stale; verify named files or commands before relying on them.",
+      "Search saved memories of this session's scopes. Matches words, and meaning once the local model has loaded. Returns the best matches; read one in full with memory_read. Results can be stale; verify named files or commands before relying on them.",
     inputSchema: INPUT_SCHEMA,
     execute: (input, ctx) => search(deps, input, ctx.sessionID),
   };

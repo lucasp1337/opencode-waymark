@@ -53,7 +53,7 @@ ln -s "$PWD/src/index.ts" ~/.config/opencode/plugin/waymark.ts
 
 ## Embedding model
 
-Waymark checks for near-duplicates when you save, and `memory_search` matches by meaning as well as by words. For that it uses a small local embedding model, `Xenova/multilingual-e5-small` (quantized q8, multilingual).
+Waymark checks for near-duplicates when you save, and `memory_search` matches by meaning as well as by words. For that it uses a small local embedding model, `Xenova/multilingual-e5-small` (quantized q8).
 
 - **Download:** on first activation, about 130 MB, once. After that it works offline.
 - **Disk:** the install also pulls the ONNX runtime (about 450 MB). With the model, plan for about 600 MB.

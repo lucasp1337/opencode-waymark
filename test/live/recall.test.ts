@@ -77,37 +77,37 @@ describe("onToolAfter: just-in-time recall", () => {
 const STORED_ID = "01JB8Z6Q4R3M2N1P0V9W8X0201";
 const stored = {
   kind: "fact",
-  title: "Nasadzovací skript sa spúšťa z koreňa repozitára",
-  body: "Spustenie z podadresára rozbije relatívne cesty.",
+  title: "Deploy script runs from the repository root",
+  body: "Running it from a subdirectory breaks relative paths.",
 } as const;
 
 function saveFact(title: string, body: string): ScriptedCall {
   return { tool: "memory_save", args: { kind: "fact", scope: "user", title, body } };
 }
 
-describe("memory_save: duplicate candidates in one language", () => {
-  test("a Slovak paraphrase of a Slovak memory is returned as a related memory", async () => {
+describe("memory_save: duplicate candidates", () => {
+  test("a paraphrase of a stored memory is returned as a related memory", async () => {
     const env = liveEnvWithWaymark();
     seedMemory(env, STORED_ID, stored);
 
     const provider = await runScripted(env, [
       saveFact(
-        "Nasadenie spúšťaj len v hornom adresári repa",
-        "V podpriečinku prestanú fungovať odkazy na súbory.",
+        "Only launch release tooling in the topmost folder",
+        "Elsewhere, file references stop resolving.",
       ),
     ]);
 
     expect(provider.toolResults()).toEqual([expect.stringContaining(STORED_ID)]);
   });
 
-  test("an unrelated Slovak note is saved without related memories", async () => {
+  test("an unrelated note is saved without related memories", async () => {
     const env = liveEnvWithWaymark();
     seedMemory(env, STORED_ID, stored);
 
     const provider = await runScripted(env, [
       saveFact(
-        "Integračné testy potrebujú bežiaci Docker",
-        "Pred sadou testov štartuje kontajner Postgresu.",
+        "Integration tests need Docker running",
+        "A Postgres container starts before the test suite.",
       ),
     ]);
 

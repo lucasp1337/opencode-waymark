@@ -1,4 +1,5 @@
-import type { Memory } from "../../model/memory";
+import { type Memory, titleAndBody } from "../../model/memory";
+import { wordsOf } from "../../model/words";
 import type { HostPort } from "../../port";
 import type { RelatedQuery } from "../../store/cache";
 import { type Embedder, EmbeddingShapeError } from "../../store/embedder";
@@ -6,12 +7,19 @@ import type { MemoryStore } from "../../store/memory-store";
 import type { VectorIndex } from "../../store/vector-index";
 import type { EmbedderState, LazyEmbedder } from "./embeddings/lazy-embedder";
 import { fuseRankings } from "./rank-fusion";
+import { wordShare } from "./word-share";
 
 const RANKING_DEPTH = 20;
 
-// Meaning matches below this are unrelated within one language; the live embedding-model test
-// guards the value.
-export const MIN_SIMILARITY = 0.91;
+// Calibrated on a small sample of English developer notes: unrelated notes score below it,
+// paraphrases above. Notes on the same topic may land above it, which is intended: a spurious
+// candidate costs one extra call. Re-tune with test/live/bench/similarity-pairs.ts.
+export const MIN_SIMILARITY = 0.862;
+
+// A stored memory counts as a duplicate by words when it repeats at least this share of the new
+// text's distinct words; sharing a single common word proves nothing. Calibrated with
+// test/live/bench/similarity-pairs.ts.
+export const MIN_WORD_SHARE = 0.5;
 
 // How long a save waits for a model that is still loading before checking for duplicates by words
 // alone. A cached model loads in a second or two; a download is not worth holding a save for.
@@ -29,15 +37,14 @@ export interface SearchResult {
   readonly meaning: MeaningSearch;
 }
 
-interface SearchOptions {
-  // Wait up to MODEL_WAIT_MS for a model still loading, instead of answering by words at once.
-  readonly waitForModel?: boolean;
-}
-
 export interface Retriever {
-  // Text matching, plus meaning once the model is loaded. Loading and embedding are slow, so only
-  // tools call this, never hooks.
-  search(query: SearchQuery, options?: SearchOptions): Promise<SearchResult>;
+  // Any shared word, ranked, plus meaning once the model is loaded. Loading and embedding are
+  // slow, so only tools call this, never hooks.
+  search(query: SearchQuery): Promise<SearchResult>;
+  // The memories a new text duplicates: those repeating much of its words, plus those that mean the
+  // same once the model is loaded. A model still loading is awaited for up to MODEL_WAIT_MS, as a
+  // duplicate missed here is saved silently.
+  duplicatesOf(query: SearchQuery): Promise<SearchResult>;
 }
 
 interface RetrieverDeps {
@@ -69,18 +76,34 @@ async function embedQuery(embedder: Embedder, text: string): Promise<Float32Arra
   return query;
 }
 
-async function rankByMeaning(
-  deps: Pick<RetrieverDeps, "store" | "vectors">,
-  embedder: Embedder,
-  query: SearchQuery,
-): Promise<Memory[]> {
-  const candidates = deps.store
+// The memories a search ranks by meaning or by word share: every one in scope and of the kinds asked.
+function candidatesFor(store: MemoryStore, query: SearchQuery): Memory[] {
+  return store
     .inScopes(query.scopes)
     .filter((memory) => query.kinds === undefined || query.kinds.includes(memory.kind));
+}
+
+// Words are those of `wordsOf`, the one definition the duplicate check uses.
+function rankByWordShare(candidates: readonly Memory[], text: string): Memory[] {
+  const wanted = wordsOf(text);
+  return candidates
+    .map((memory) => ({ memory, share: wordShare(wanted, titleAndBody(memory)) }))
+    .filter((entry) => entry.share >= MIN_WORD_SHARE)
+    .toSorted((a, b) => b.share - a.share)
+    .slice(0, RANKING_DEPTH)
+    .map((entry) => entry.memory);
+}
+
+async function rankByMeaning(
+  deps: Pick<RetrieverDeps, "vectors">,
+  embedder: Embedder,
+  candidates: readonly Memory[],
+  text: string,
+): Promise<Memory[]> {
   if (candidates.length === 0) {
     return [];
   }
-  const queryVector = await embedQuery(embedder, query.text);
+  const queryVector = await embedQuery(embedder, text);
   const vectors = await deps.vectors.vectorsFor(candidates, embedder, queryVector.length);
   const scored = candidates.flatMap((memory) => {
     const vector = vectors.get(memory.id);
@@ -104,24 +127,40 @@ async function modelState(deps: RetrieverDeps, waitForModel: boolean): Promise<E
   return deps.embedder.request();
 }
 
+// `byWords` is the text ranking; meaning joins it once the model is ready.
+async function withMeaning(
+  deps: RetrieverDeps,
+  query: SearchQuery,
+  { byWords, waitForModel }: { byWords: Memory[]; waitForModel: boolean },
+): Promise<SearchResult> {
+  const state = await modelState(deps, waitForModel);
+  if (state.status !== "ready") {
+    return { memories: byWords.slice(0, query.limit), meaning: state.status };
+  }
+  try {
+    const candidates = candidatesFor(deps.store, query);
+    const byMeaning = await rankByMeaning(deps, state.embedder, candidates, query.text);
+    const fused = fuseRankings([byWords, byMeaning], (memory) => memory.id);
+    return { memories: fused.slice(0, query.limit), meaning: "used" };
+  } catch (error) {
+    deps.log("warn", "semantic search failed, using text matching only", {
+      error: String(error),
+    });
+    return { memories: byWords.slice(0, query.limit), meaning: "unavailable" };
+  }
+}
+
 export function createRetriever(deps: RetrieverDeps): Retriever {
   return {
-    async search(query, { waitForModel = false } = {}) {
-      const byText = deps.store.related({ ...query, limit: RANKING_DEPTH });
-      const state = await modelState(deps, waitForModel);
-      if (state.status !== "ready") {
-        return { memories: byText.slice(0, query.limit), meaning: state.status };
-      }
-      try {
-        const byMeaning = await rankByMeaning(deps, state.embedder, query);
-        const fused = fuseRankings([byText, byMeaning], (memory) => memory.id);
-        return { memories: fused.slice(0, query.limit), meaning: "used" };
-      } catch (error) {
-        deps.log("warn", "semantic search failed, using text matching only", {
-          error: String(error),
-        });
-        return { memories: byText.slice(0, query.limit), meaning: "unavailable" };
-      }
-    },
+    search: (query) =>
+      withMeaning(deps, query, {
+        byWords: deps.store.related({ ...query, limit: RANKING_DEPTH }),
+        waitForModel: false,
+      }),
+    duplicatesOf: (query) =>
+      withMeaning(deps, query, {
+        byWords: rankByWordShare(candidatesFor(deps.store, query), query.text),
+        waitForModel: true,
+      }),
   };
 }

@@ -210,17 +210,17 @@ describe("plugin options", () => {
   });
 });
 
-describe("duplicates across languages", () => {
+describe("duplicates worded differently", () => {
   const withModel = useRuntime({
     embedder: fakeEmbedder([
       [
         "deploy script must run from the repository root",
-        "nasadenie sa musí spúšťať z koreňa repozitára",
+        "Launch tooling only inside topmost folder",
       ],
     ]),
   });
 
-  test("a Slovak paraphrase of an English memory is returned as a related memory", async () => {
+  test("a paraphrase sharing no words with a memory is returned as a related memory", async () => {
     const fx = withModel();
     const english = {
       kind: "fact",
@@ -237,8 +237,8 @@ describe("duplicates across languages", () => {
       {
         kind: "fact",
         scope: "repo",
-        title: "Skript na nasadenie sa musí spúšťať z koreňa repozitára",
-        body: "Inak sa rozbijú cesty.",
+        title: "Launch tooling only inside topmost folder",
+        body: "Otherwise file references stop resolving.",
       },
       SESSION,
     );
@@ -260,13 +260,13 @@ describe("a save while the model is still loading", () => {
     title: "The deploy script must run from the repository root",
     body: "Subdirectories break its relative paths.",
   };
-  const slovak = {
+  const paraphrase = {
     kind: "fact",
     scope: "repo",
-    title: "Skript na nasadenie sa musí spúšťať z koreňa repozitára",
-    body: "Inak sa rozbijú cesty.",
+    title: "Launch tooling only inside topmost folder",
+    body: "Otherwise file references stop resolving.",
   };
-  const model = fakeEmbedder([[english.title, slovak.title]]);
+  const model = fakeEmbedder([[english.title, paraphrase.title]]);
   function slowModel() {
     const loads: PromiseWithResolvers<Embedder>[] = [];
     const timeout = Promise.withResolvers<void>();
@@ -305,7 +305,7 @@ describe("a save while the model is still loading", () => {
   test("waits for the load and then finds the paraphrase by meaning", async () => {
     const { fx, loads } = await restartedWithEnglishSaved();
 
-    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    const saving = fx.host.callTool("memory_save", paraphrase, SESSION);
     loads[1]?.resolve(model);
 
     expect(await saving).toStartWith("Not saved yet: related memories exist.");
@@ -314,19 +314,19 @@ describe("a save while the model is still loading", () => {
   test("embeds the content only, without the date shown to the agent", async () => {
     const { fx, loads } = await restartedWithEnglishSaved();
 
-    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    const saving = fx.host.callTool("memory_save", paraphrase, SESSION);
     loads[1]?.resolve(model);
     await saving;
 
     const embedded = model.calls.flat();
-    expect(embedded).toContain(`${slovak.title}\n${slovak.body}`);
+    expect(embedded).toContain(`${paraphrase.title}\n${paraphrase.body}`);
     expect(embedded).toContain(`${english.title}\n${english.body}`);
   });
 
   test("saves after the bound elapses without a model", async () => {
     const { fx, timeout } = await restartedWithEnglishSaved();
 
-    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    const saving = fx.host.callTool("memory_save", paraphrase, SESSION);
     await settled();
     timeout.resolve();
 
@@ -336,7 +336,7 @@ describe("a save while the model is still loading", () => {
   test("saves, and logs the failure once, when the model cannot load", async () => {
     const { fx, loads } = await restartedWithEnglishSaved();
 
-    const saving = fx.host.callTool("memory_save", slovak, SESSION);
+    const saving = fx.host.callTool("memory_save", paraphrase, SESSION);
     loads[1]?.reject(new Error("offline"));
     const reply = await saving;
 

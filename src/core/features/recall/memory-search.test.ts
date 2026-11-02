@@ -14,7 +14,7 @@ const REPO: ScopeRef = { level: "repo", id: "github.com/acme/api" };
 const OTHER_REPO: ScopeRef = { level: "repo", id: "github.com/acme/web" };
 const SESSION = "ses_1";
 
-const ROOT_RULE = ["repository root", "koreňového adresára"];
+const ROOT_RULE = ["repository root", "topmost folder"];
 
 const rootRule = {
   title: "Deploy from the repository root",
@@ -87,12 +87,14 @@ describe("memory_search", () => {
     expect(await search({ query: "kubernetes" })).toBe("No memories match.");
   });
 
-  test("finds a memory by meaning in another language once the model is ready", async () => {
+  test("finds a memory by meaning, without a shared word, once the model is ready", async () => {
     const { search, saveAll } = searchTool(ready(fakeEmbedder([ROOT_RULE])));
     const memory = searchMemory(1, rootRule);
     saveAll([memory]);
 
-    expect(await search({ query: "Skript spúšťaj z koreňového adresára" })).toBe(hitLine(memory));
+    expect(await search({ query: "Launch scripts exclusively inside topmost folder" })).toBe(
+      hitLine(memory),
+    );
   });
 
   test("returns at most ten hits", async () => {

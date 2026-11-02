@@ -1,7 +1,7 @@
 import type { Embedder } from "../src/core/store/embedder";
 
-// Phrases that mean the same thing, in any language. They share one axis, so a sentence and its
-// translation point the same way and unrelated sentences are orthogonal.
+// Phrases that mean the same thing without sharing words. They share one axis, so a sentence and its
+// paraphrase point the same way and unrelated sentences are orthogonal.
 export type Concept = readonly string[];
 
 export interface FakeEmbedder extends Embedder {

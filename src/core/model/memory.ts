@@ -49,6 +49,12 @@ export function activeOnly(memories: readonly Memory[]): Memory[] {
   return memories.filter((memory) => !superseded.has(memory.id));
 }
 
+// What a memory is embedded and searched as; a save checks its new text against stored memories
+// in the same form.
+export function titleAndBody(content: Pick<MemoryContent, "title" | "body">): string {
+  return `${content.title}\n${content.body}`;
+}
+
 export function newMemory(content: ValidContent, origin: Origin): Memory {
   const stamp = origin.now.toISOString();
   return {

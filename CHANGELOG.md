@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Near-duplicates worded differently are now found when saving; the similarity cutoff was lowered.
+- Saving no longer reports unrelated memories as related because they share a common word.
+
+### Changed
+
+- Search and duplicate checks are described and tested for English. Matching across languages is no longer claimed.
+
 ## [0.2.0] - 2026-11-01
 
 ### Changed
