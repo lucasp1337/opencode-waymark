@@ -12,6 +12,7 @@ import { systemDeps } from "../core/system";
 import { createFileLogger, type Logger, logFilePath } from "../logger";
 import { attempt, collect, each } from "./isolation";
 import { buildShape, type SchemaBuilder } from "./schema";
+import { mergeSkillPaths } from "./skill-paths";
 import { summarize } from "./summarize";
 import { commandOf, touchedPaths } from "./tool-args";
 import { appendText, canAppend } from "./tool-output";
@@ -36,11 +37,13 @@ const CAPABILITIES: Capabilities = {
   toolOutputMutation: true,
   compactionHook: true,
   toast: true,
+  skills: true,
 };
 
 interface Registry {
   tools: NonNullable<Hooks["tool"]>;
   commands: NonNullable<Config["command"]>;
+  skillDirs: string[];
   system: Array<(sessionID: string) => Promise<string | null>>;
   userMessage: Array<(sessionID: string, text: string) => Promise<void>>;
   toolAfter: Array<(call: ToolCallInfo) => Promise<string | null>>;
@@ -53,6 +56,7 @@ function emptyRegistry(): Registry {
   return {
     tools: {},
     commands: {},
+    skillDirs: [],
     system: [],
     userMessage: [],
     toolAfter: [],
@@ -102,6 +106,9 @@ export function createV1Adapter(input: { client: AdapterClient }, logger: Logger
     },
     registerCommand: (name, description, template) => {
       registry.commands[name] = { template, description };
+    },
+    registerSkillDir: (dir) => {
+      registry.skillDirs.push(dir);
     },
     onSystem: (fn) => registry.system.push(fn),
     onUserMessage: (fn) => registry.userMessage.push(fn),
@@ -157,6 +164,7 @@ export function createV1Adapter(input: { client: AdapterClient }, logger: Logger
         guarded("config", () => {
           trace("config", config, {});
           config.command = { ...config.command, ...registry.commands };
+          addSkillDirs(config, registry.skillDirs, logger);
         }),
       event: ({ event }) =>
         guarded("event", async () => {
@@ -230,6 +238,18 @@ export function createV1Adapter(input: { client: AdapterClient }, logger: Logger
         }),
     }),
   };
+}
+
+function addSkillDirs(config: Config, dirs: readonly string[], logger: Logger): void {
+  if (dirs.length === 0) {
+    return;
+  }
+  const merged = mergeSkillPaths(Reflect.get(config, "skills"), dirs);
+  if (!merged.ok) {
+    logger.log("warn", "skill dirs not registered", { reason: merged.reason, dirs });
+    return;
+  }
+  Reflect.set(config, "skills", merged.skills);
 }
 
 function sessionEventOf(event: Parameters<NonNullable<Hooks["event"]>>[0]["event"]) {

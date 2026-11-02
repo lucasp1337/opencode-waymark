@@ -11,12 +11,14 @@ import { memoryLinkTool } from "./features/link/memory-link";
 import { createSecondRepoHints } from "./features/link/second-repo";
 import { createLazyEmbedder, type LazyEmbedder } from "./features/recall/embeddings/lazy-embedder";
 import type { Baseline } from "./features/recall/fresh-memories";
+import { memoryInstructions } from "./features/recall/instructions";
 import { createJit } from "./features/recall/jit";
 import { memoryReadTool } from "./features/recall/memory-read";
 import { memorySearchTool } from "./features/recall/memory-search";
 import { createOwnWrites, type OwnWrites } from "./features/recall/own-writes";
 import { createRecallScopes, type RecallScope } from "./features/recall/recall-scope";
 import { createRetriever } from "./features/recall/retriever";
+import { saveGuidance } from "./features/recall/save-guidance";
 import { createSessionBlocks } from "./features/recall/session-blocks";
 import { memorySaveTool } from "./features/save/memory-save";
 import { memoryUpdateTool } from "./features/save/memory-update";
@@ -50,6 +52,8 @@ export interface RuntimeDeps {
   readonly loadEmbedder: () => Promise<Embedder>;
   // Resolves after the delay; bounds how long a save waits for the model.
   readonly sleep: (ms: number) => Promise<void>;
+  // Holds one `<name>/SKILL.md` folder per skill Waymark ships.
+  readonly skillsDir: string;
   // The plugin options from the user's opencode config, unparsed.
   readonly options: unknown;
 }
@@ -149,6 +153,12 @@ function registerTools(wiring: Wiring): void {
   }
 }
 
+function registerSkills(host: HostPort, skillsDir: string): void {
+  if (host.capabilities.skills) {
+    host.registerSkillDir(skillsDir);
+  }
+}
+
 function registerCommands(host: HostPort): void {
   for (const command of commandTemplates(SETUP_INSTRUCTIONS)) {
     host.registerCommand(command.name, command.description, command.template);
@@ -176,6 +186,9 @@ function registerSessionBlocks(wiring: Wiring, recallScope: RecallScopeOf) {
     store,
     fs: registryFs,
     registryFile,
+    instructions: memoryInstructions(
+      saveGuidance({ host, fs: deps.fs, skillsDir: deps.skillsDir }),
+    ),
     recallScope,
     indexLines: () => config.current().indexLines,
     indexExit: () => config.current().indexExit,
@@ -291,6 +304,7 @@ function wire(rawHost: HostPort, deps: RuntimeDeps, resources: Resources): void 
   };
   registerTools(wiring);
   registerCommands(host);
+  registerSkills(host, deps.skillsDir);
   registerRecall(wiring);
 }
 

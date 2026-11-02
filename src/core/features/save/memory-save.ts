@@ -14,6 +14,7 @@ import { parseContent } from "../../model/validate";
 import type { JsonSchemaObject, ToolDef } from "../../port";
 import { CONTENT_PROPERTIES, KIND_PROPERTY, SCOPE_PROPERTY } from "../content-schema";
 import { memoryLine } from "../memory-line";
+import { SAVE_SKILL } from "../save-skill";
 import type { ToolDeps } from "../tool-deps";
 import { persistMemory } from "./persist";
 import { parseRelation, type Relation } from "./relation";
@@ -124,8 +125,11 @@ async function save(deps: ToolDeps, input: unknown, sessionID: string): Promise<
 export function memorySaveTool(deps: ToolDeps): ToolDef {
   return {
     name: "memory_save",
-    description:
-      "Save a memory for future sessions. Include the why. If related memories exist they are returned and nothing is saved; read them, then call again with relation (prefer updating one).",
+    description: [
+      "Save a memory for future sessions.",
+      ...(deps.host.capabilities.skills ? [`Load the ${SAVE_SKILL} skill first.`] : []),
+      "Include the why. If related memories exist they are returned and nothing is saved; read them, then call again with relation (prefer updating one).",
+    ].join(" "),
     inputSchema: INPUT_SCHEMA,
     execute: (input, ctx) => save(deps, input, ctx.sessionID),
   };

@@ -66,6 +66,13 @@ describe("commandTemplates", () => {
     expect(template).toContain('After "review", go through the listed memories with the user');
   });
 
+  test("the memory command has the agent flag memories that fail the memory policy", () => {
+    const { template } = templateOf("memory");
+
+    expect(template).toContain("flag memories that fail the memory policy");
+    expect(template).toContain("offer to forget or move them");
+  });
+
   test("remember saves with memory_save and handles the related-memories reply", () => {
     const { template } = templateOf("remember");
 

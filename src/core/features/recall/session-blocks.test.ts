@@ -10,10 +10,10 @@ import type { LogLevel } from "../../port";
 import { linkRepos } from "../../scope/products";
 import { nodeFileSystem } from "../../store/fs";
 import { type MemoryStats, type Telemetry, UNSEEN } from "../../telemetry/telemetry";
-import { INSTRUCTIONS } from "./instructions";
 import type { RecallScope } from "./recall-scope";
 import { createSessionBlocks } from "./session-blocks";
 
+const INSTRUCTIONS = "Instructions for the agent.";
 const CHAIN: ScopeChain = [{ level: "user" }];
 // A registry file that does not exist reads as empty.
 const NO_REGISTRY = { fs: nodeFileSystem, registryFile: "/nonexistent/registry.json" };
@@ -64,6 +64,7 @@ function blocksOver(
   return createSessionBlocks({
     store: { inScopes: () => stored },
     ...NO_REGISTRY,
+    instructions: INSTRUCTIONS,
     recallScope: () => Promise.resolve(scope),
     indexLines: () => 40,
     indexExit: () => ({ sessions: 20, days: 30 }),
@@ -213,6 +214,7 @@ describe("createSessionBlocks settings", () => {
 
   function blocksWith(settings: { indexLines: number; exitSessions: number }) {
     return createSessionBlocks({
+      instructions: INSTRUCTIONS,
       store: { inScopes: () => stored },
       ...NO_REGISTRY,
       recallScope: () => Promise.resolve({ chain: CHAIN, directory: "/d" }),
@@ -263,6 +265,7 @@ describe("createSessionBlocks with a full index", () => {
       new Map([[old.id, { ...UNSEEN, lastRead: new Date("2026-01-02T00:00:00.000Z") }]]),
     );
     const blocks = createSessionBlocks({
+      instructions: INSTRUCTIONS,
       store: { inScopes: () => [old, saved] },
       ...NO_REGISTRY,
       recallScope: () => Promise.resolve({ chain: CHAIN, directory: "/d" }),
@@ -321,6 +324,7 @@ describe("createSessionBlocks scopes line", () => {
       await linkRepos(nodeFileSystem, registryFile, { repos: linked, product: "shop" });
     }
     const blocks = createSessionBlocks({
+      instructions: INSTRUCTIONS,
       store: { inScopes: () => [] },
       fs: nodeFileSystem,
       registryFile,
@@ -359,6 +363,7 @@ describe("createSessionBlocks scopes line", () => {
     nodeFileSystem.writeAtomic(registryFile, '{"products":{"shop":1}}');
     const logged: Logged[] = [];
     const blocks = createSessionBlocks({
+      instructions: INSTRUCTIONS,
       store: { inScopes: () => [] },
       fs: nodeFileSystem,
       registryFile,

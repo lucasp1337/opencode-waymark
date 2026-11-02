@@ -8,6 +8,7 @@ const withoutHook = useRuntime({
     toolOutputMutation: true,
     compactionHook: false,
     toast: true,
+    skills: true,
   },
 });
 

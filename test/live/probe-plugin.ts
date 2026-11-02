@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import type { Plugin, PluginInput } from "@opencode-ai/plugin";
 import type { HostPort } from "../../src/core/port";
 import { createV1Adapter } from "../../src/host/v1";
@@ -72,6 +73,7 @@ function registerProbes(host: HostPort): void {
     "Waymark probe command",
     "Reply with exactly: PROBE_COMMAND_OK $ARGUMENTS",
   );
+  host.registerSkillDir(resolve(import.meta.dir, "..", "fixtures", "skills"));
   host.onSystem((sessionID) => {
     host.log("info", "probe.system", { sessionID });
     return Promise.resolve("The project codeword is WAYMARK_SYSTEM_MARKER_7Q2.");

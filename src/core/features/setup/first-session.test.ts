@@ -56,6 +56,7 @@ describe("first-session notice", () => {
       toolOutputMutation: true,
       compactionHook: true,
       toast: false,
+      skills: true,
     });
 
     await notice();

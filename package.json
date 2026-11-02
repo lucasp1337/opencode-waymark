@@ -20,7 +20,9 @@
   "files": [
     "src",
     "!src/**/*.test.ts",
-    "docs/guide.md"
+    "docs/guide.md",
+    "docs/memory-policy.md",
+    "skills"
   ],
   "engines": {
     "opencode": "1.19.4"

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A memory policy: a memory holds what you would otherwise have to tell the agent again and what the code, the repo and its docs cannot tell it. [What belongs in a memory](docs/memory-policy.md) explains it with examples.
+- A `waymark-save` skill, shipped with the plugin, that the agent loads before it saves or updates a memory. It covers what belongs in memory, which kind and scope to pick, and how to write it. Hosts without skills get the same text in the session instructions.
+- `/memory review` now also flags memories that fail the policy, such as functional detail readable from the code, team-wide conventions that belong in `AGENTS.md`, task progress and secrets, and offers to forget or move them.
+
+### Changed
+
+- The save guidance moved out of the always-on session instructions into the skill, so the instructions are shorter. The save triggers, the same-turn rule and the secret rule stay.
+- The kind descriptions in the tool schemas say what each kind is for, in line with the policy.
+
 ## [0.2.0] - 2026-11-01
 
 ### Changed

@@ -4,7 +4,6 @@ import { type ContentInput, validContent } from "../../../../test/valid-content"
 import { type Memory, newMemory } from "../../model/memory";
 import type { ScopeChain, ScopeRef } from "../../model/scope";
 import type { IndexUsage } from "../lifecycle/index-exit";
-import { INSTRUCTIONS } from "./instructions";
 import { indexLine, renderSessionBlock } from "./session-block";
 
 const USER: ScopeRef = { level: "user" };
@@ -30,8 +29,17 @@ const SCOPES_LINE = "Scopes here: user · org:github.com/acme · repo:github.com
 const NOW = new Date("2026-03-01T10:00:00.000Z");
 const NO_USAGE: IndexUsage = { stats: new Map(), now: NOW, exit: { sessions: 20, days: 30 } };
 
+const INSTRUCTIONS = "Instructions for the agent.";
+
 function render(memories: Memory[], indexLines = 40, usage: IndexUsage = NO_USAGE): string {
-  return renderSessionBlock({ chain: CHAIN, productRepos: [], memories, indexLines, usage }).text;
+  return renderSessionBlock({
+    instructions: INSTRUCTIONS,
+    chain: CHAIN,
+    productRepos: [],
+    memories,
+    indexLines,
+    usage,
+  }).text;
 }
 
 describe("renderSessionBlock", () => {
@@ -108,11 +116,6 @@ describe("renderSessionBlock", () => {
     ]);
 
     expect(text).toContain("- Use UTC (2026-01-15)");
-  });
-
-  test("tells the agent memories are dated and to check what they name", () => {
-    expect(INSTRUCTIONS).toContain("Memories are dated");
-    expect(INSTRUCTIONS).toContain("file, flag or command");
   });
 
   test("groups by scope with the narrowest scope last", () => {
@@ -232,6 +235,7 @@ describe("renderSessionBlock", () => {
     const keptFact = memory({ kind: "fact", title: "Kept", body: "b" }, { n: 15, scope: USER });
 
     const { shown } = renderSessionBlock({
+      instructions: INSTRUCTIONS,
       chain: CHAIN,
       productRepos: [],
       memories: [shownRule, hiddenGotcha, cutFact, keptFact],

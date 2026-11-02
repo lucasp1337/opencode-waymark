@@ -26,7 +26,7 @@ Hi, and welcome. Waymark gives your agent a memory that survives between session
 
 ## Waymark or AGENTS.md?
 
-Short version: if the whole team should follow it, put it in `AGENTS.md`. That file is committed and reviewed, so everyone gets it. Waymark is for the rest: what is yours, what spans several repos, what lives in repos you do not own, and what the agent picks up along the way.
+Short version: if the whole team should follow it, put it in `AGENTS.md`. That file is committed and reviewed, so everyone gets it. Waymark is for the rest: what is yours, what spans several repos, what lives in repos you do not own, and what the agent picks up along the way. [What belongs in a memory](memory-policy.md) has the full picture, including what the code already says better than a memory could. Waymark ships it as a skill, `waymark-save`, that the agent loads just before it saves.
 
 ## A peek inside
 
@@ -54,7 +54,7 @@ Lists the active memories of every scope in this session, grouped by scope and k
 
 ### `/memory review`
 
-Lists memories worth a second look: replaced ones still on disk, ones missing a required field, facts and decisions that dropped out of the session index, and gotchas that fire often. The agent then goes through them with you: keep, forget, merge into another memory, or turn into a rule. If nothing qualifies it says so.
+Lists memories worth a second look: replaced ones still on disk, ones missing a required field, facts and decisions that dropped out of the session index, and gotchas that fire often. The agent then goes through them with you: keep, forget, merge into another memory, or turn into a rule. It also points out memories that do not meet the [memory policy](memory-policy.md), such as ones that only repeat what the code says, and offers to forget or move them. If nothing qualifies it says so.
 
 ### `/memory move <id> <scope>`
 

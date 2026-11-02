@@ -11,6 +11,7 @@ const noOutputMutation = useRuntime({
     toolOutputMutation: false,
     compactionHook: true,
     toast: true,
+    skills: true,
   },
 });
 

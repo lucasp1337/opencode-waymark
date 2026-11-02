@@ -198,3 +198,51 @@ describe("guarded hooks", () => {
     expect(entries).toContainEqual({ level: "error", msg: "hook failed" });
   });
 });
+
+describe("config skills", () => {
+  test("adds registered skill dirs and keeps the user's paths and urls", async () => {
+    const { adapter, hooks } = fixture();
+    adapter.host.registerSkillDir("/waymark/skills");
+    const config = { command: {}, skills: { paths: ["/user/skills"], urls: ["https://x"] } };
+
+    await hooks.config?.(config);
+
+    expect(config.skills).toEqual({
+      paths: ["/user/skills", "/waymark/skills"],
+      urls: ["https://x"],
+    });
+  });
+
+  test("adds a dir only once when the config hook runs again", async () => {
+    const { adapter, hooks } = fixture();
+    adapter.host.registerSkillDir("/waymark/skills");
+    const config = {};
+
+    await hooks.config?.(config);
+    await hooks.config?.(config);
+
+    expect(Reflect.get(config, "skills")).toEqual({ paths: ["/waymark/skills"] });
+  });
+
+  test("leaves the config without skills when no dir is registered", async () => {
+    const { hooks } = fixture();
+    const config = {};
+
+    await hooks.config?.(config);
+
+    expect(Reflect.has(config, "skills")).toBe(false);
+  });
+
+  test("a malformed skills value is left alone and logged, and commands still register", async () => {
+    const { adapter, hooks, entries } = fixture();
+    adapter.host.registerSkillDir("/waymark/skills");
+    adapter.host.registerCommand("memory", "d", "t");
+    const config = { command: {}, skills: "/user/skills" };
+
+    await hooks.config?.(config);
+
+    expect(config.skills).toBe("/user/skills");
+    expect(config.command).toEqual({ memory: { template: "t", description: "d" } });
+    expect(entries).toContainEqual({ level: "warn", msg: "skill dirs not registered" });
+  });
+});

@@ -34,6 +34,7 @@ describe("notify without toast support", () => {
       toolOutputMutation: true,
       compactionHook: true,
       toast: false,
+      skills: true,
     });
 
     await notify(host, "waymark · hi");
