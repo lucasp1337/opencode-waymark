@@ -12,7 +12,7 @@ function memoryTemplate(setupText: string): string {
     "",
     setupText,
     "",
-    'Otherwise call memory_command once, with args set to exactly the arguments above (an empty string if there are none), and show its result to the user as it is. After "review", go through the listed memories with the user.',
+    'Otherwise call memory_command once, with args set to exactly the arguments above (an empty string if there are none), and show its result to the user as it is. After "review", go through the listed memories with the user. Also flag memories that fail the memory policy (see the waymark-save skill, or on hosts without skills the save guidance in the session instructions) and offer to forget or move them.',
   ].join("\n");
 }
 

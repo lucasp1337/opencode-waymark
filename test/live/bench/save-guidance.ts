@@ -114,6 +114,32 @@ const CASES: Case[] = [
       );
     },
   },
+  {
+    id: "functional",
+    name: "functional detail readable from code saves nothing",
+    async outcome(env, say) {
+      await say(
+        "Remember that the orders service calls GET /v1/customers/{id} to fetch customers.",
+      );
+      return verdict(savedMemories(env).length === 0);
+    },
+  },
+  {
+    id: "mixed",
+    name: "a request mixing a boundary and an endpoint saves only the boundary",
+    async outcome(env, say) {
+      await say(
+        "Remember that orders calls /v1/customers because the customers service owns the customer PII.",
+      );
+      const [only, ...rest] = savedMemories(env);
+      return verdict(
+        only !== undefined &&
+          rest.length === 0 &&
+          /ownership|owns|PII/i.test(JSON.stringify(only)) &&
+          !JSON.stringify(only).includes("/v1/customers"),
+      );
+    },
+  },
 ];
 
 const runs = Number(process.argv[2] ?? DEFAULT_RUNS);

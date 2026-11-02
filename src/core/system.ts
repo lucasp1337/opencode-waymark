@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { monotonicFactory } from "ulid";
 import {
   processEmbedderSlot,
@@ -31,6 +32,7 @@ export function systemDeps(
   const dataDir = dataRoot(env, homedir());
   return {
     dataDir,
+    skillsDir: fileURLToPath(new URL("../../skills", import.meta.url)),
     fs: nodeFileSystem,
     git: processGit,
     originUrl: processOriginUrl,

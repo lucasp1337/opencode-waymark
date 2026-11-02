@@ -5,10 +5,10 @@ import { type ScopeChain, scopeKey } from "../../model/scope";
 import { type IndexUsage, visibleIndex } from "../lifecycle/index-exit";
 import { appliesLines, datedTitle } from "../memory-line";
 import { alwaysOnText } from "./always-on";
-import { INSTRUCTIONS } from "./instructions";
 import { scopesLine } from "./scopes-line";
 
 interface BlockInput {
+  readonly instructions: string;
   readonly chain: ScopeChain;
   // The repos linked to the chain's product; empty when it has none.
   readonly productRepos: readonly string[];
@@ -64,7 +64,7 @@ export function renderSessionBlock(input: BlockInput): SessionBlock {
   // Cut to the cap after the memories that left the index are gone, then grouped by scope.
   const index = visibleIndex(onChain, input.usage).slice(0, input.indexLines);
   const text = [
-    INSTRUCTIONS,
+    input.instructions,
     "",
     scopesLine(input.chain, input.productRepos),
     ...alwaysOnKinds.flatMap((kind) =>

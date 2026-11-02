@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { fakeEmbedder } from "../../test/fake-embedder";
 import { FIRST_ID, SESSION, useRuntime } from "../../test/runtime-fixture";
-import { INSTRUCTIONS } from "./features/recall/instructions";
+import { memoryInstructions, SAVE_SKILL_POINTER } from "./features/recall/instructions";
 import type { Embedder } from "./store/embedder";
+
+// The fake host supports skills, so the save guidance is a pointer.
+const INSTRUCTIONS = memoryInstructions(SAVE_SKILL_POINTER);
 
 const runtime = useRuntime();
 const withReviewers = useRuntime({ options: { subagents: ["reviewer"] } });
@@ -173,6 +176,7 @@ describe("hosts with fewer capabilities", () => {
       toolOutputMutation: true,
       compactionHook: true,
       toast: true,
+      skills: true,
     },
   });
   const withoutToolOutput = useRuntime({
@@ -181,6 +185,7 @@ describe("hosts with fewer capabilities", () => {
       toolOutputMutation: false,
       compactionHook: true,
       toast: true,
+      skills: true,
     },
   });
 

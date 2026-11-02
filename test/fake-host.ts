@@ -17,6 +17,7 @@ interface LogEntry {
 export interface FakeHost extends HostPort {
   tools: Map<string, ToolDef>;
   commands: Map<string, { description: string; template: string }>;
+  skillDirs: string[];
   toasts: string[];
   logs: LogEntry[];
   sessions: Map<string, SessionMeta>;
@@ -33,6 +34,7 @@ const ALL_CAPABILITIES: Capabilities = {
   toolOutputMutation: true,
   compactionHook: true,
   toast: true,
+  skills: true,
 };
 
 async function gather<A>(
@@ -58,6 +60,7 @@ export function createFakeHost(capabilities: Capabilities = ALL_CAPABILITIES): F
   const tools = new Map<string, ToolDef>();
   const sessions = new Map<string, SessionMeta>();
   const commands = new Map<string, { description: string; template: string }>();
+  const skillDirs: string[] = [];
   const toasts: string[] = [];
   const logs: LogEntry[] = [];
 
@@ -66,6 +69,7 @@ export function createFakeHost(capabilities: Capabilities = ALL_CAPABILITIES): F
     capabilities,
     tools,
     commands,
+    skillDirs,
     toasts,
     logs,
     sessions,
@@ -74,6 +78,9 @@ export function createFakeHost(capabilities: Capabilities = ALL_CAPABILITIES): F
     },
     registerCommand: (name, description, template) => {
       commands.set(name, { description, template });
+    },
+    registerSkillDir: (dir) => {
+      skillDirs.push(dir);
     },
     onSystem: (fn) => system.push(fn),
     onUserMessage: (fn) => userMessage.push(fn),

@@ -16,6 +16,7 @@ interface SessionBlockDeps {
   readonly store: Pick<MemoryStore, "inScopes">;
   readonly fs: FileSystem;
   readonly registryFile: string;
+  readonly instructions: string;
   readonly recallScope: (sessionID: string) => Promise<RecallScope | null>;
   // Read per rendering, so a changed setting applies to the next session without a restart.
   readonly indexLines: () => number;
@@ -53,6 +54,7 @@ async function render(
   const indexed = memories.filter((memory) => isIndexed(memory.kind)).map((memory) => memory.id);
   const usage = { stats: deps.counters.stats(indexed), now: deps.now(), exit: deps.indexExit() };
   const block = renderSessionBlock({
+    instructions: deps.instructions,
     chain: scope.chain,
     productRepos: productReposOf(deps, scope.chain),
     memories,

@@ -3,6 +3,7 @@ export interface Capabilities {
   toolOutputMutation: boolean;
   compactionHook: boolean;
   toast: boolean;
+  skills: boolean;
 }
 
 export type JsonSchema =
@@ -58,6 +59,8 @@ export interface HostPort {
   capabilities: Capabilities;
   registerTool(def: ToolDef): void;
   registerCommand(name: string, description: string, template: string): void;
+  // The dir holds one `<name>/SKILL.md` folder per skill.
+  registerSkillDir(dir: string): void;
   onSystem(fn: (sessionID: string) => Promise<string | null>): void;
   onUserMessage(fn: (sessionID: string, text: string) => Promise<void>): void;
   onToolAfter(fn: (call: ToolCallInfo) => Promise<string | null>): void;

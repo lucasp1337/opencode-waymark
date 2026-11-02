@@ -14,6 +14,14 @@ describe("FakeHost", () => {
     expect(await host.callTool("echo", { a: 1 }, "ses_1")).toBe('ses_1:{"a":1}');
   });
 
+  test("records registered skill dirs in order", () => {
+    const host = createFakeHost();
+    host.registerSkillDir("/a");
+    host.registerSkillDir("/b");
+
+    expect(host.skillDirs).toEqual(["/a", "/b"]);
+  });
+
   test("rejects an unknown tool", async () => {
     await expect(createFakeHost().callTool("nope", {}, "ses_1")).rejects.toThrow("unknown tool");
   });

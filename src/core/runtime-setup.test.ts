@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { FIRST_ID, type RuntimeFixture, SESSION, useRuntime } from "../../test/runtime-fixture";
-import { INSTRUCTIONS } from "./features/recall/instructions";
+import { memoryInstructions, SAVE_SKILL_POINTER } from "./features/recall/instructions";
 import { PRESETS } from "./features/recall/presets";
 import { DAY_MS } from "./telemetry/telemetry";
+
+// The fake host supports skills, so the save guidance is a pointer.
+const INSTRUCTIONS = memoryInstructions(SAVE_SKILL_POINTER);
 
 const runtime = useRuntime();
 

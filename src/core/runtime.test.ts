@@ -182,6 +182,7 @@ const tempDir = useTempDirs();
 function depsIn(dataDir: string): RuntimeDeps {
   return {
     dataDir,
+    skillsDir: "/skills",
     fs: nodeFileSystem,
     git: processGit,
     originUrl: processOriginUrl,

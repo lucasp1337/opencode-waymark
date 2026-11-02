@@ -11,6 +11,7 @@ import { createFakeHost, type FakeHost } from "./fake-host";
 import { fakeRepos } from "./fake-repos";
 import { memoryId } from "./memory-id";
 
+const SHIPPED_SKILLS = join(import.meta.dir, "../skills");
 const REPO_DIR = "/work/api";
 const WEB_DIR = "/work/web";
 const PLAIN_DIR = "/work/notes";
@@ -83,6 +84,8 @@ interface RuntimeSetup {
   // Plugin options, as the user's opencode config would pass them.
   readonly options?: unknown;
   readonly capabilities?: Capabilities;
+  // Where the skills live; by default the ones Waymark ships.
+  readonly skillsDir?: string;
   // Without one the model never finishes loading, so retrieval is by words only.
   readonly embedder?: Embedder;
   // Replaces the embedder's load, so a test controls when it finishes or fails.
@@ -105,6 +108,7 @@ function start(activation: Activation): RuntimeFixture {
   const { dataDir, clock, newId } = activation;
   const runtime = createRuntime(host, {
     dataDir,
+    skillsDir: activation.setup.skillsDir ?? SHIPPED_SKILLS,
     fs: repos.fs,
     git: fakeGit,
     originUrl: repos.originUrl,

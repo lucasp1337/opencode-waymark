@@ -23,10 +23,10 @@ const DELIVERY_TEXT: { readonly [D in Delivery]: string } = {
 const KIND_MEANING: { readonly [K in Kind]: string } = {
   rule: "must hold, binding",
   preference: "how the user likes things done",
-  fact: "something true about the project or person",
+  fact: "something true about the setup that the code does not show",
   decision: "a choice made, with its reason",
-  gotcha: "a trap to avoid",
-  reference: "a pointer to where something lives",
+  gotcha: "a trap the code does not reveal",
+  reference: "a pointer to something outside the repo, never a copy of it",
 };
 
 const TRIGGER_LIST = { type: "array", items: { type: "string" } } as const;
